@@ -1,0 +1,3 @@
+# People and links, not families
+
+GEDCOM and the private Стебло app group people into family records (husband, wife, children). We store people plus two kinds of link instead: a parent link (parent → child) and a partner link (two people). Each link's ID is derived from the two person IDs. Without a server, two relatives who each add grandpa's children offline would otherwise create two family records for the same couple and leave a duplicate to reconcile after every sync. With derived link IDs, two devices that add the same link create the same record. Families are computed when needed, for drawing the tree and for GEDCOM export. Links are gender-neutral.

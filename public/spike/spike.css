@@ -1,0 +1,8 @@
+body { margin: 0; padding: 16px; font: 15px system-ui, sans-serif; background: #0e141a; color: #e8eef2; }
+#settings, #actions { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 8px; }
+input[type=number] { width: 64px; }
+#status { font-size: 18px; min-height: 2.5em; }
+#qr { display: none; width: 100%; max-width: 640px; background: #fff; }
+#video { display: none; width: 100%; max-width: 640px; }
+#log { white-space: pre-wrap; font-size: 12px; }
+.on { display: block !important; }
