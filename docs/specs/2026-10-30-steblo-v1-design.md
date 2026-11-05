@@ -3,7 +3,7 @@
 Status: draft for approval · 2026-10-30
 Exact rules: [reference spec](2026-10-30-steblo-v1-reference.md). Vocabulary: [GLOSSARY.md](../../GLOSSARY.md). Decisions: [docs/adr](../adr/) 0001–0007. User stories: `.scratch/steblo-v1/spec.md`. Review: [review file](2026-10-30-steblo-v1-design.review.md).
 
-**Alex** (GitHub `alexanxin`) owns this project. His private app, **Стебло** ("the private app"), holds his real family tree and runs on Vercel behind a family password. This app reuses some of its code and none of its data. The public code will live in `Xin-Dragons/steblo`, under his GitHub organisation. **uds2gedcom** is his public converter from old Sierra Generations files to GEDCOM. All people in this document are invented.
+**Alex** (GitHub `alexanxin`) owns this project. His private app, **Стебло** ("the private app"), holds his real family tree and runs on Vercel behind a family password. This app reuses some of its code and none of its data. The public code lives in `alexanxin/steblo-app`. **uds2gedcom** is his public converter from old Sierra Generations files to GEDCOM. All people in this document are invented.
 
 ## Problem
 
@@ -201,7 +201,7 @@ The spike needs HTTPS for the camera, so it is deployed as a public Vercel previ
 
 ### 11. Hosting and security
 
-- Static files on Vercel at `steblo-app.vercel.app` (ADR 0005), production deploys from `main` of `Xin-Dragons/steblo` only.
+- Static files on Vercel at `steblo-app.vercel.app` (ADR 0005), production deploys from `main` of `alexanxin/steblo-app` only.
 - No server functions, no analytics, no third-party requests. Headers and CSP: reference R16.
 - Vendored libraries sit in one folder at pinned versions, with licences and recorded SHA-256 hashes. Candidates: qrcode-generator (MIT); jsQR (Apache-2.0) or zxing-wasm.
 - **Privacy check.** `scripts/privacy-check` folds every word in the tracked files with the matching key and compares it against a names list kept outside the repo, made from the private app's data. It runs as local pre-commit and pre-push hooks on Alex's Mac, and contributors' pull requests are merged only from there. A CI check isn't used, because GitHub doesn't give secrets to pull requests from forks, so it couldn't block them. Fixtures use only the invented set Danilo/Данило, Teodora/Теодора, Miro, Ema, Adam, Lea, Novakov/Новаков, Ѓеко/Gjeko and Чарин/Čarin, which had no collisions on 2026-10-30.

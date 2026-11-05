@@ -29,7 +29,7 @@
 - **Verified, inferred, assumed:**
   - Verified by running: payload sizes, frame and QR round trips, the cyclic and LT simulation, npm versions and hashes.
   - Assumed until the spike: phone QR speed, Wake Lock, file save and storage isolation on installed apps.
-  - Unknown: whether a Hobby Vercel account can deploy from the `Xin-Dragons` repo.
+  - Settled 2026-11-05: the repo is `alexanxin/steblo-app` on Alex's personal account, which a Hobby Vercel account can import.
 - **Goldfish review:** readiness review run on this plan; see `PLAN_steblo-v1-2026-10-30.review.md`.
 
 ## File Map
@@ -1180,13 +1180,13 @@ git commit -m "Docs, spike page and QR transfer code"
 **Risk:** needs accounts; the first outward-facing step.
 **Depends on:** 0.8, and **Alex's explicit go-ahead**
 
-- [ ] **Step 1: Create the repo** (after go-ahead). Public, under the organisation, with `dev` as the only branch.
+- [x] **Step 1: Create the repo** (after go-ahead). Public, on Alex's account, with `dev` as the only branch. Done 2026-11-05: `alexanxin/steblo-app` (first created as `Xin-Dragons/steblo` by mistake, then transferred).
 
 ```bash
-gh repo create Xin-Dragons/steblo --public --source=. --push
+gh repo create alexanxin/steblo-app --public --source=. --push
 ```
 
-- [ ] **Step 2: Create the Vercel project** in the dashboard: import `Xin-Dragons/steblo`, name it `steblo-app`, framework Other, output directory `public`. Check that the Hobby account can import from the organisation. If it can't, stop and ask Alex.
+- [ ] **Step 2: Create the Vercel project** in the dashboard: import `alexanxin/steblo-app`, name it `steblo-app`, framework Other, output directory `public`.
 
 - [ ] **Step 3: Set Settings → Git → Production Branch to `main`.** That branch doesn't exist yet, so `dev` only ever makes previews.
 

@@ -125,7 +125,7 @@ Everything stays on the phones. Every change is recorded and can be undone, and 
 
 ## Implementation Decisions
 
-- **Shape.** Static PWA, vanilla JavaScript ES modules, no build step, no framework. Served as static files from `steblo-app.vercel.app`, deployed from `main` of the GitHub repo `Xin-Dragons/steblo`. MIT license. A release script only writes the service worker's file list.
+- **Shape.** Static PWA, vanilla JavaScript ES modules, no build step, no framework. Served as static files from `steblo-app.vercel.app`, deployed from `main` of the GitHub repo `alexanxin/steblo-app`. MIT license. A release script only writes the service worker's file list.
 - **Pure core** (tested in Node): clock, records (with the one validator), tree, history, names, dates, sync, join, gedcom, backup, envelope (WebCrypto), frames, qrcodec (vendored QR generator and decoder on raw pixels). Browser-only parts: storage, scanner, ui, sw.
 - **Tree interface** (used by the UI and tests):
   - create from stored records, or empty
@@ -211,6 +211,6 @@ Everything stays on the phones. Every change is recorded and can be undone, and 
 ## Further Notes
 
 - The address `steblo-app.vercel.app` must never change: each phone's tree is stored under it (ADR 0005). Never delete the Vercel project.
-- Creating the GitHub repo, the Vercel project and any deployment waits for Alex's explicit go-ahead. The spike needs a public Vercel preview, so that go-ahead is the first blocker of the build. Whether a Hobby Vercel account can deploy from the `Xin-Dragons` org repo is checked at that point.
+- Creating the GitHub repo, the Vercel project and any deployment waits for Alex's explicit go-ahead. The spike needs a public Vercel preview, so that go-ahead is the first blocker of the build.
 - `uds2gedcom` writes no `_UID`. Steblo copes through the file hash, but adding `_UID` there would keep IDs stable across re-conversions.
 - Alex's iPhone and an Android phone are needed for the spike gate and the final acceptance check.
