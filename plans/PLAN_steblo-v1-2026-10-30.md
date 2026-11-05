@@ -45,7 +45,8 @@
 | `public/src/clock.js` | 1 | Times and ordering |
 | `public/src/records.js` | 1 | Record kinds, validator, later-wins rule |
 | `public/src/dates.js` | 1 | Partial dates |
-| `public/src/tree.js` | 1 | Operations, sets, `view()` |
+| `public/src/tree.js` | 1 | Operations, `view()` |
+| `public/src/sets.js` | 1 | Union-find and set resolution, shared by `tree.js` and `history.js` |
 | `public/src/history.js` | 1 | Change groups, undo, scrubbing |
 | `public/src/sync.js` | 2 | Hello, hashes, payload, apply, re-stamp |
 | `public/src/envelope.js` | 2 | Encryption |
@@ -112,6 +113,7 @@ isPlaceholder(name); givenRelation(a, b) // → "same" | "close" | "placeholder"
 tree.addPerson(fields); tree.addRelative(id, relation, fields, { otherParent })
 tree.edit(id, fields); tree.editPartnership(a, b, fields); tree.setDeviceName(name)
 tree.removePerson(id); tree.restorePerson(id); tree.unlink(kind, a, b)
+tree.link(kind, a, b) // kind "parent" (a is b's parent) or "partner"; both people already exist
 tree.merge(a, b, choices, { session }); tree.notSame(a, b, { session })
 tree.erase(id); tree.eraseRest(id); tree.undo(group)
 // these don't:
@@ -1567,6 +1569,8 @@ Tests:
 - "erases aren't applied unless allowed, and are listed".
 - "applying returns incoming IDs, new groups and gained relatives".
 - "a hostile payload is rejected": over 200,000 records, bad IDs, extra fields, deep nesting, `__proto__` keys.
+- "unknown fields on a stored record stay bounded across syncs": a merged record keeps only the 4 smallest unknown keys, so the result doesn't depend on arrival order (found in Milestone 1: the validator bounds one incoming record, not the merged result).
+- "applyPayload validates before building the change": `tree.adopt` trusts its input.
 
 ## Task 2.5: Step 3 diff
 
@@ -1826,11 +1830,13 @@ Check in the browser:
 
 **Files:** `public/ui/forms.js`. **Depends on:** 5.3.
 
+First add `tree.link(kind, a, b)` to `public/src/tree.js`, with tests: "link makes an existing person a parent", "link makes two existing people partners", "linking a third parent throws", "a link that would make someone their own ancestor throws", "linking an existing link changes nothing". Then add **Link to someone already in the tree** (parent, child or partner, with a person picker) to the card menu (story 76).
+
 Build the card menu and forms for edit, add relative (surname prefilled by `formFor`), partial dates, places, notes, marriage, deceased and birth surname. Delete and erase go in the menu, and erase needs the typed given name.
 
 Add **This is me** to the menu (stored in `meta.thisIsMe`, resolved through merges).
 
-Check in the browser: the `docs/hand-check.md` lines for stories 9–21 and 24.
+Check in the browser: the `docs/hand-check.md` lines for stories 9–21, 24 and 76.
 
 ## Task 5.5: Other screens
 

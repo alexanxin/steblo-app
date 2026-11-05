@@ -117,6 +117,10 @@ Everything stays on the phones. Every change is recorded and can be undone, and 
 71. As a user who opens the app in a second tab, I want to be told it's already open, so that two copies don't overwrite each other.
 72. As a user, I want to change my name, language and Latin-letters setting at any time, so that the app suits me.
 
+### Connecting people
+
+76. As a user, I want to link two people already in the tree as parent and child, or as partners, so that I can connect people who were imported or added separately.
+
 ### Contributors
 
 73. As a translator, I want to add a language by adding one strings file, so that the app reaches more families.
@@ -129,7 +133,7 @@ Everything stays on the phones. Every change is recorded and can be undone, and 
 - **Pure core** (tested in Node): clock, records (with the one validator), tree, history, names, dates, sync, join, gedcom, backup, envelope (WebCrypto), frames, qrcodec (vendored QR generator and decoder on raw pixels). Browser-only parts: storage, scanner, ui, sw.
 - **Tree interface** (used by the UI and tests):
   - create from stored records, or empty
-  - add person; add parent, child, partner or sibling
+  - add person; add parent, child, partner or sibling; link two existing people as parent and child or as partners
   - edit; delete and restore; erase
   - merge with conflict choices; mark not-same; undo a change group
   - `view()`: canonical people, links, derived families, needs-attention items
