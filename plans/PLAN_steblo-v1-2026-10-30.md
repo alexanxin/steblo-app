@@ -225,6 +225,7 @@ node_modules/
   "outputDirectory": "public",
   "headers": [
     { "source": "/sw.js", "headers": [{ "key": "Cache-Control", "value": "no-cache" }] },
+    { "source": "/spike/sw.js", "headers": [{ "key": "Cache-Control", "value": "no-cache" }] },
     {
       "source": "/(.*)",
       "headers": [
@@ -1100,7 +1101,31 @@ self.onmessage = ({ data }) => {
 };
 ```
 
-- [ ] **Step 5: Write `public/spike/spike.js`**
+- [ ] **Step 5: Write `public/spike/sw.js`.** Android Chrome offers Install only when a service worker has a real fetch handler (https://developer.chrome.com/blog/update-install-criteria). Added 2026-11-05 at Alex's request, after the phones couldn't install the page. It doesn't change what the spike measures.
+
+```js
+// Spike only. Android Chrome offers "Install" only when a service worker has a real fetch
+// handler. Network first, so every run uses the latest files; the copy lets it open offline.
+const CACHE = "steblo-spike-v1";
+
+self.addEventListener("install", () => self.skipWaiting());
+self.addEventListener("activate", e => e.waitUntil(self.clients.claim()));
+
+self.addEventListener("fetch", e => {
+  if (e.request.method !== "GET" || new URL(e.request.url).origin !== location.origin) return;
+  e.respondWith(fetch(e.request)
+    .then(res => {
+      if (res.ok) {
+        const copy = res.clone();
+        caches.open(CACHE).then(c => c.put(e.request, copy));
+      }
+      return res;
+    })
+    .catch(() => caches.match(e.request).then(hit => hit || Response.error())));
+});
+```
+
+- [ ] **Step 6: Write `public/spike/spike.js`**
 
 ```js
 // Throwaway: measures QR transfer and device features on real phones (reference R17).
@@ -1119,6 +1144,7 @@ const log = entry => {
 const status = text => { $("status").textContent = text; };
 const installed = matchMedia("(display-mode: standalone)").matches || navigator.standalone === true;
 $("mode").textContent = `${installed ? "Installed" : "Browser tab"} · ${navigator.userAgent}`;
+navigator.serviceWorker?.register("sw.js").catch(e => log({ event: "serviceWorker", error: String(e) }));
 
 const settings = () => ({ kb: number("kb"), block: number("block"), fps: number("fps"), ec: $("ec").value, mode: $("qrmode").value, coding: number("coding"), worker: $("worker").checked });
 let stopper = null;
@@ -1273,7 +1299,7 @@ $("save").onclick = async () => {
 $("open").onchange = async e => log({ event: "opened", bytes: (await e.target.files[0]?.text())?.length });
 ```
 
-- [ ] **Step 6: Run it in a desktop browser.** Create `.claude/launch.json`:
+- [ ] **Step 7: Run it in a desktop browser.** Create `.claude/launch.json`:
 
 ```json
 { "version": "0.0.1", "configurations": [{ "name": "static", "runtimeExecutable": "python3", "runtimeArgs": ["-m", "http.server", "8080", "-d", "public"], "port": 8080 }] }
@@ -1286,7 +1312,7 @@ Start it and open `http://localhost:8080/spike/`. Expected:
 
   This page has never run in a browser, so fix whatever this finds. Python's server doesn't send the CSP; that is checked in task 0.9.
 
-- [ ] **Step 7: Commit Milestone 0** (after Alex's go-ahead). The hook runs `privacy-check`.
+- [ ] **Step 8: Commit Milestone 0** (after Alex's go-ahead). The hook runs `privacy-check`.
 
 ```bash
 git add .
@@ -1874,7 +1900,7 @@ Reference: R6, R9. Check on the two phones.
 
 Move the working camera and drawing code from `public/spike/spike.js`, using the settings pinned in task 0.11. The display requests Wake Lock on every showing screen, with the R17 fallback notice. The scanner handles camera denied and no camera.
 
-Check: a code shown on one phone is read by the other. Then delete `public/spike/`, keeping `docs/specs/spike-results.md`.
+Check: a code shown on one phone is read by the other. Then delete `public/spike/`, keeping `docs/specs/spike-results.md`, except for one file: replace `public/spike/sw.js` with a stub that unregisters itself (`install` calls `skipWaiting`, `activate` calls `self.registration.unregister()`), so phones that installed the spike stop serving its cached pages.
 
 ## Task 6.2: The sync flow
 

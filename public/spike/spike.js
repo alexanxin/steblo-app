@@ -14,6 +14,7 @@ const log = entry => {
 const status = text => { $("status").textContent = text; };
 const installed = matchMedia("(display-mode: standalone)").matches || navigator.standalone === true;
 $("mode").textContent = `${installed ? "Installed" : "Browser tab"} · ${navigator.userAgent}`;
+navigator.serviceWorker?.register("sw.js").catch(e => log({ event: "serviceWorker", error: String(e) }));
 
 const settings = () => ({ kb: number("kb"), block: number("block"), fps: number("fps"), ec: $("ec").value, mode: $("qrmode").value, coding: number("coding"), worker: $("worker").checked });
 let stopper = null;
