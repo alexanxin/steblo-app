@@ -10,7 +10,7 @@
 
 ## How to read this plan
 
-**Milestone 0 is complete and runnable.** Its code was executed before it was written here: 18 tests passed on three runs in a row (Node 26.12.1). The spike page was only syntax-checked. It has never run in a browser.
+**Milestone 0 is complete and runnable.** Its code was executed before it was written here: 18 tests passed on three runs in a row (Node 26.12.1). The 4 privacy-check tests were added on 2026-11-05. The spike page was only syntax-checked. It has never run in a browser.
 
 **Milestones 1–8 are specified, not coded.** Each task names its files, its interface, the reference section that decides every rule, and its tests with expected results. Full code for those is written when each milestone starts. This is a deliberate departure from "complete code in every task", for two reasons: the spike can change formats, and pasting about 6,000 lines of code here would mean building the app twice. No design decision is left open: where a task doesn't state a rule, the reference spec does.
 
@@ -310,14 +310,18 @@ export function matchKey(name) {
 **Risk:** a leak into a public repo can't be recalled, so this comes before the first commit.
 **Depends on:** 0.2
 
-**Files:** Create `scripts/privacy-check.mjs`, `scripts/privacy-allow.txt`. Outside the repo: `~/.steblo-private-names.txt`, `.git/hooks/pre-commit`, `.git/hooks/pre-push`.
+**Files:** Create `scripts/privacy-check.mjs`, `scripts/privacy-allow.txt`, `tests/privacy-check.test.js`. Outside the repo: `~/.steblo-private-names.txt`, `.git/hooks/pre-commit`, `.git/hooks/pre-push`.
 
 - [ ] **Step 1: Write `scripts/privacy-check.mjs`**
 
 ```js
 #!/usr/bin/env node
-// Fails if a tracked file contains a word whose matching key is on a names list kept
-// outside the repo. Usage: STEBLO_NAMES=/path/to/names.txt node scripts/privacy-check.mjs
+// Fails if text contains a word whose matching key is on a names list kept outside the repo.
+// Usage: STEBLO_NAMES=/path/to/names.txt node scripts/privacy-check.mjs [--staged | --push | file]
+//   no argument: every tracked or new file in the working tree
+//   --staged: the staged version of each staged file (pre-commit hook)
+//   --push: every file version in the commits being pushed, refs read from stdin (pre-push hook),
+//           so a name committed and later deleted is still caught
 import { execFileSync } from "node:child_process";
 import { readFileSync, existsSync } from "node:fs";
 import { matchKey } from "../public/src/names.js";
@@ -330,20 +334,50 @@ if (!list || !existsSync(list)) {
 const keys = new Set(readFileSync(list, "utf8").split("\n").map(matchKey).filter(k => k.length >= 3));
 const allowFile = new URL("./privacy-allow.txt", import.meta.url);
 const allow = new Set(existsSync(allowFile) ? readFileSync(allowFile, "utf8").split("\n").map(matchKey) : []);
-const files = (process.argv[2] ? [process.argv[2]] : execFileSync("git", ["ls-files", "--cached", "--others", "--exclude-standard"], { encoding: "utf8" }).split("\n")).filter(f => f && existsSync(f));
+
+const git = (...args) => execFileSync("git", args, { encoding: "utf8", maxBuffer: 1 << 28 });
+const lines = text => text.split("\n").filter(Boolean);
+const ZERO = /^0+$/;
+
+/** What to check: [{ path, label, read() }]. */
+function sources(mode) {
+  if (mode === "--staged") {
+    return lines(git("diff", "--cached", "--name-only", "--diff-filter=ACMR"))
+      .map(path => ({ path, label: path, read: () => git("show", `:${path}`) }));
+  }
+  if (mode === "--push") {
+    const out = [];
+    for (const line of lines(readFileSync(0, "utf8"))) {
+      const [, local, , remote] = line.split(" ");
+      if (!local || ZERO.test(local)) continue; // a branch being deleted
+      let commits;
+      try { commits = git("rev-list", ...(ZERO.test(remote) ? [local, "--not", "--remotes"] : [`${remote}..${local}`])); }
+      catch { commits = git("rev-list", local, "--not", "--remotes"); } // remote commit not known here
+      for (const commit of lines(commits)) {
+        for (const path of lines(git("diff-tree", "-r", "--root", "--no-commit-id", "--name-only", "--diff-filter=ACMR", commit))) {
+          out.push({ path, label: `${commit.slice(0, 7)}:${path}`, read: () => git("show", `${commit}:${path}`) });
+        }
+      }
+    }
+    return out;
+  }
+  const files = mode ? [mode] : lines(git("ls-files", "--cached", "--others", "--exclude-standard"));
+  return files.filter(path => existsSync(path)).map(path => ({ path, label: path, read: () => readFileSync(path, "utf8") }));
+}
+
 const BINARY = /\.(png|jpg|ico|woff2?|wasm)$/;
+const checked = sources(process.argv[2]).filter(s => !BINARY.test(s.path) && !s.path.startsWith("public/vendor/"));
 let hits = 0;
-for (const file of files) {
-  if (BINARY.test(file) || file.startsWith("public/vendor/")) continue;
-  readFileSync(file, "utf8").split("\n").forEach((text, i) => {
+for (const source of checked) {
+  source.read().split("\n").forEach((text, i) => {
     for (const word of text.match(/\p{L}+/gu) ?? []) {
       const k = matchKey(word);
-      if (k.length >= 3 && keys.has(k) && !allow.has(k)) { console.log(`${file}:${i + 1}: ${word}`); hits += 1; }
+      if (k.length >= 3 && keys.has(k) && !allow.has(k)) { console.log(`${source.label}:${i + 1}: ${word}`); hits += 1; }
     }
   });
 }
 if (hits) { console.error(`privacy-check: ${hits} word(s) match the names list.`); process.exit(1); }
-console.log(`privacy-check: clean (${files.length} files).`);
+console.log(`privacy-check: clean (${checked.length} files).`);
 ```
 
 - [ ] **Step 2: Write `scripts/privacy-allow.txt`.** Ordinary words that match a name, and the descriptive words the join rules list:
@@ -371,7 +405,8 @@ node -e 'const fs=require("fs"),b=require(process.env.HOME+"/Desktop/Raboten/С�
 - [ ] **Step 5: Install the hooks.** They live in `.git/` and are never committed.
 
 ```bash
-printf '#!/bin/sh\nSTEBLO_NAMES=$HOME/.steblo-private-names.txt exec node scripts/privacy-check.mjs\n' | tee .git/hooks/pre-commit > .git/hooks/pre-push
+printf '#!/bin/sh\nSTEBLO_NAMES=$HOME/.steblo-private-names.txt exec node scripts/privacy-check.mjs --staged\n' > .git/hooks/pre-commit
+printf '#!/bin/sh\nSTEBLO_NAMES=$HOME/.steblo-private-names.txt exec node scripts/privacy-check.mjs --push\n' > .git/hooks/pre-push
 chmod +x .git/hooks/pre-commit .git/hooks/pre-push
 ```
 
@@ -387,6 +422,87 @@ git rm -q --cached hook-proof.txt; rm hook-proof.txt
 ```
 
 Expected: `check exit 1` and `hook exit 1`.
+
+- [ ] **Step 7: Write `tests/privacy-check.test.js`.** It runs the script in a throwaway repo with an invented names list. The hooks check only what is committed or pushed, so one session's draft can't block another's commit, and a name committed and later deleted is still caught on push.
+
+```js
+import test from "node:test";
+import assert from "node:assert/strict";
+import { execFileSync, spawnSync } from "node:child_process";
+import { copyFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
+// A throwaway repo with the real script and an invented names list.
+function sandbox() {
+  const dir = mkdtempSync(join(tmpdir(), "privacy-check-"));
+  mkdirSync(join(dir, "scripts"));
+  mkdirSync(join(dir, "public/src"), { recursive: true });
+  copyFileSync(new URL("../scripts/privacy-check.mjs", import.meta.url), join(dir, "scripts/privacy-check.mjs"));
+  copyFileSync(new URL("../public/src/names.js", import.meta.url), join(dir, "public/src/names.js"));
+  writeFileSync(join(dir, "names.txt"), "Quorvin\nZelbrak\n");
+  writeFileSync(join(dir, ".gitignore"), "names.txt\n");
+  const git = (...args) => execFileSync("git", args, { cwd: dir, encoding: "utf8" });
+  git("init", "-q", "-b", "dev");
+  git("config", "user.email", "test@example.invalid");
+  git("config", "user.name", "Test");
+  const write = (path, text) => writeFileSync(join(dir, path), text);
+  const check = (args = [], input = "") => spawnSync("node", ["scripts/privacy-check.mjs", ...args], {
+    cwd: dir, input, encoding: "utf8", env: { ...process.env, STEBLO_NAMES: join(dir, "names.txt") },
+  }).status;
+  return { dir, git, write, check, done: () => rmSync(dir, { recursive: true, force: true }) };
+}
+
+test("staged mode ignores names in files that aren't staged", () => {
+  const s = sandbox();
+  s.write("draft.txt", "Quorvin\n");
+  s.write("clean.txt", "Danilo\n");
+  s.git("add", "clean.txt");
+  assert.equal(s.check(["--staged"]), 0);
+  assert.equal(s.check(), 1, "the working-tree mode still sees the draft");
+  s.done();
+});
+
+test("staged mode checks the staged version, not the working copy", () => {
+  const s = sandbox();
+  s.write("notes.txt", "Zelbrak\n");
+  s.git("add", "notes.txt");
+  s.write("notes.txt", "Ema\n");
+  assert.equal(s.check(["--staged"]), 1);
+  s.done();
+});
+
+test("push mode catches a name committed and later deleted", () => {
+  const s = sandbox();
+  s.write("a.txt", "Teodora\n");
+  s.git("add", "a.txt", "scripts", "public", ".gitignore");
+  s.git("commit", "-q", "-m", "one");
+  s.write("a.txt", "Quorvin\n");
+  s.git("commit", "-q", "-am", "two");
+  s.write("a.txt", "Teodora\n");
+  s.git("commit", "-q", "-am", "three");
+  const head = s.git("rev-parse", "HEAD").trim(), zero = "0".repeat(40);
+  assert.equal(s.check(["--push"], `refs/heads/dev ${head} refs/heads/dev ${zero}\n`), 1);
+  s.done();
+});
+
+test("push mode passes clean commits and ignores working-tree drafts", () => {
+  const s = sandbox();
+  s.write("a.txt", "Miro\n");
+  s.git("add", "a.txt", "scripts", "public", ".gitignore");
+  s.git("commit", "-q", "-m", "one");
+  const first = s.git("rev-parse", "HEAD").trim();
+  s.write("b.txt", "Lea\n");
+  s.git("add", "b.txt");
+  s.git("commit", "-q", "-m", "two");
+  s.write("draft.txt", "Zelbrak\n");
+  const head = s.git("rev-parse", "HEAD").trim();
+  assert.equal(s.check(["--push"], `refs/heads/dev ${head} refs/heads/dev ${first}\n`), 0);
+  s.done();
+});
+```
+
+- [ ] **Step 8: Run it.** `node --test tests/privacy-check.test.js`. Expected: 4 tests pass.
 
 ## Task 0.4: Vendor the QR libraries
 
@@ -896,7 +1012,7 @@ export function readRgba({ data, width, height }, jsQR, { mode = "byte" } = {}) 
 }
 ```
 
-- [ ] **Step 5: Run all tests.** `npm test`. Expected: 18 pass, 0 fail.
+- [ ] **Step 5: Run all tests.** `npm test`. Expected: 22 pass, 0 fail (18 here plus 4 from task 0.3).
 
 ## Task 0.8: The spike page
 
