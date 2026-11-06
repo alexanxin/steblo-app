@@ -100,7 +100,11 @@ $("scan").onclick = async () => {
   video.srcObject = media; video.classList.add("on"); await video.play();
   const add = collector(), grab = document.createElement("canvas"), g = grab.getContext("2d", { willReadFrequently: true });
   // Several decoders in parallel, so more camera frames get a decode attempt.
-  const pool = Array.from({ length: s.decoders }, () => ({ worker: new Worker("decode-worker.js"), busy: false }));
+  const pool = Array.from({ length: Math.max(0, s.decoders) }, () => ({ worker: new Worker("decode-worker.js"), busy: false }));
+  // Android Chrome's built-in QR reader. Its text result is safe only for base45 frames.
+  const native = s.decoders < 0 && "BarcodeDetector" in self ? new BarcodeDetector({ formats: ["qr_code"] }) : null;
+  if (s.decoders < 0) log({ event: "native", available: !!native, mode: s.mode });
+  let nativeBusy = false;
   const scanStart = performance.now();
   let running = true, tries = 0, hits = 0, spent = 0, last = null, firstReadMs = null;
   const take = (bytes, ms) => {
@@ -126,7 +130,7 @@ $("scan").onclick = async () => {
   const loop = () => {
     if (!running) return;
     const slot = pool.find(p => !p.busy);
-    if ((slot || !pool.length) && video.videoWidth) {
+    if ((slot || !pool.length) && !nativeBusy && video.videoWidth) {
       // The centre square, shrunk: jsQR then searches a small picture that is mostly code.
       const vw = video.videoWidth, vh = video.videoHeight, crop = Math.round(Math.min(vw, vh) * 0.8);
       if (s.scanPx) {
@@ -136,8 +140,15 @@ $("scan").onclick = async () => {
         grab.width = vw; grab.height = vh;
         g.drawImage(video, 0, 0);
       }
-      const img = g.getImageData(0, 0, grab.width, grab.height);
-      if (slot) { slot.busy = true; slot.worker.postMessage({ pixels: img.data.buffer, width: img.width, height: img.height }, [img.data.buffer]); }
+      const img = native ? null : g.getImageData(0, 0, grab.width, grab.height);
+      if (native) {
+        nativeBusy = true;
+        const start = performance.now();
+        native.detect(grab).then(codes => {
+          nativeBusy = false;
+          take(codes[0] ? new TextEncoder().encode(codes[0].rawValue) : null, performance.now() - start);
+        }, () => { nativeBusy = false; });
+      } else if (slot) { slot.busy = true; slot.worker.postMessage({ pixels: img.data.buffer, width: img.width, height: img.height }, [img.data.buffer]); }
       else {
         const start = performance.now(), hit = window.jsQR(img.data, img.width, img.height, { inversionAttempts: "dontInvert" });
         take(hit ? (s.mode === "base45" ? new TextEncoder().encode(hit.data) : Uint8Array.from(hit.binaryData)) : null, performance.now() - start);
