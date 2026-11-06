@@ -1690,6 +1690,8 @@ Test:
 
 # Milestone 3: Join
 
+Milestone 2's decisions (payload shapes, `applyPayload` results, `simulate` options) are in its hand-over note `side-session-notes/local_855f3d99-1d24-47df-975c-6db53dacc39b/m2.md`; Milestone 1's are in `side-session-notes/local_56d6153c-c9fb-4e7b-abe8-b0d62f13ac51/m1.md` (both under `~/Library/Application Support/Claude/`).
+
 Reference: R9. Same steps as Milestone 1.
 
 ## Task 3.1: Comparing two people
@@ -1856,6 +1858,8 @@ Tests (on fake-indexeddb, with failure injection):
 - "an aborted transaction leaves nothing and reports the failure".
 - "a quota error is reported and locks editing".
 - "load recomputes last from stored times".
+- "a re-stamp change resets the stored clock": `change.meta.resetLast` with `meta.last` (Milestone 2 decision 12).
+- "committing a change scrubs erased records from history in the same transaction": via `commitToHistory` (Milestone 1 decision 23).
 - "restore swaps everything in one transaction".
 - "a migration copies the stores to a snapshot first".
 - "the snapshot is removed after the next good start".

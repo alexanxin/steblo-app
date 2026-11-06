@@ -232,6 +232,8 @@ export function createTree({ device, name = "", records = new Map(), clock, now 
 
     /** Make the change part of the tree. Called after storage has committed it. */
     adopt(change) {
+      // A re-stamp moves the clock back from the future (R5); everything else only moves it forward.
+      if (change.meta?.resetLast && change.meta.last) clock.reset(change.meta.last);
       for (const [id, record] of change.puts) {
         records.set(id, record);
         for (const t of Object.values(record.f)) clock.observe([t[1], t[2]]);
