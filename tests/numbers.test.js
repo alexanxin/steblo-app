@@ -131,10 +131,15 @@ test("import clocks carry the lowest time, hand clocks one time per person", () 
 
 test("view of 5,000 people takes under 200 ms", t => {
   const { records } = generateTree({ people: 5000, seed: 1, clocks: "hand", noteShare: 0.03 });
-  const tree = createTree({ device: DEVICE, name: "x", records, clock: createClock({ now: () => NOW }), now: () => NOW });
-  const started = performance.now();
-  const view = tree.view();
-  const took = performance.now() - started;
+  // Best of three fresh trees: the other test files run at the same time and can steal the CPU
+  // from any single measurement (one run took 454 ms under load against 48 ms alone).
+  let tree, view, took = Infinity;
+  for (let i = 0; i < 3; i++) {
+    tree = createTree({ device: DEVICE, name: "x", records, clock: createClock({ now: () => NOW }), now: () => NOW });
+    const started = performance.now();
+    view = tree.view();
+    took = Math.min(took, performance.now() - started);
+  }
   t.diagnostic(`view of 5,000 people: ${took.toFixed(1)} ms (${view.families.length} families, ${view.attention.separate.length} separate groups)`);
   assert.equal(view.people.size, 5000);
   assert.ok(view.families.length > 1000);

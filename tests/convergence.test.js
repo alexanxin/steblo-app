@@ -1,7 +1,7 @@
 // Task 2.8: devices that sync end up identical (design: Testing 1; reference R5).
 import test from "node:test";
 import assert from "node:assert/strict";
-import { simulate, syncAll, syncPair, makePhone, commit, difference, plainRecords, DAY } from "./fixtures/simulate.js";
+import { simulate, syncAll, syncPair, makePhone, commit, difference, plainRecords, DAY, FILE_OPS } from "./fixtures/simulate.js";
 import { generateTree } from "./fixtures/tree.js";
 import { validateRecord } from "../public/src/records.js";
 import { copyRecords, pid, T0 } from "./fixtures/helpers.js";
@@ -208,4 +208,54 @@ test("a device that drops malformed items equals the others minus exactly those 
   // the malformed items did not spread: not one reached the others
   assert.equal(one.tree.records().get(ids[0]).f.sx?.[0] === "Q", false);
   assert.equal(one.tree.records().has("zz"), false);
+});
+
+// ---------------------------------------------------------------- Task 4.6: files
+
+test("devices converge with imports mid-way", async () => {
+  let imports = 0;
+  let people = 0;
+  let matchedByUid = 0;
+  for (const devices of [3, 4]) {
+    for (let seed = 1; seed <= SEEDS; seed++) {
+      const { phones, tally } = await simulate({ seed: seed * 10 + devices + 5000, devices, rounds: ROUNDS, extra: { import: FILE_OPS.import } });
+      imports += tally.import ?? 0;
+      await syncAll(phones);
+      const [first, ...rest] = phones;
+      for (const other of rest) assert.equal(difference(first, other), null, `seed ${seed}, ${devices} devices: ${first.device} vs ${other.device}`);
+      const before = plainRecords(first.tree.records());
+      await syncAll(phones, { rounds: 1 });
+      assert.equal(plainRecords(first.tree.records()), before, `seed ${seed}: a further sync changed records`);
+      people += first.tree.view().people.size;
+      // files that share _UIDs (MyHeritage and Gramps) put one person on many phones: nobody appears twice by ID
+      for (const [id, record] of first.tree.records()) if (record.kind === "person" && record.f.g?.[3] === "0000000000000000") matchedByUid += 1;
+    }
+  }
+  assert.ok(imports > 40, `imports ran ${imports} times`);
+  assert.ok(people > 500, `people: ${people}`);
+  assert.ok(matchedByUid > 100, `imported persons: ${matchedByUid}`);
+});
+
+test("restore with a new ID converges", async () => {
+  let restores = 0;
+  let restoredPhones = 0;
+  for (const devices of [3, 4]) {
+    for (let seed = 1; seed <= SEEDS; seed++) {
+      const { phones, tally } = await simulate({ seed: seed * 10 + devices + 9000, devices, rounds: ROUNDS, extra: { restore: FILE_OPS.restore, import: FILE_OPS.import } });
+      restores += tally.restore ?? 0;
+      await syncAll(phones);
+      const [first, ...rest] = phones;
+      for (const other of rest) assert.equal(difference(first, other), null, `seed ${seed}, ${devices} devices: ${first.device} vs ${other.device}`);
+      // a restored phone really has a new device ID, and after the syncs every phone knows it
+      for (const phone of phones.filter(p => p.device.startsWith("7"))) {
+        restoredPhones += 1;
+        for (const other of phones) assert.ok(other.tree.records().has(`d:${phone.device}`), `${other.device} lacks ${phone.device}`);
+      }
+      const before = plainRecords(first.tree.records());
+      await syncAll(phones, { rounds: 1 });
+      assert.equal(plainRecords(first.tree.records()), before, `seed ${seed}: a further sync changed records`);
+    }
+  }
+  assert.ok(restores > 40, `restores ran ${restores} times`);
+  assert.ok(restoredPhones > 20, `phones that ended on a restored ID: ${restoredPhones}`);
 });

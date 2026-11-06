@@ -12,6 +12,9 @@ import { commitToHistory } from "../../public/src/history.js";
 import assert from "node:assert/strict";
 import { canonicalJson } from "../../public/src/clock.js";
 import { makeTree, pid, T0 } from "./helpers.js";
+import { readFileSync } from "node:fs";
+import { importGedcom } from "../../public/src/gedcom.js";
+import { restoreBackup, validateBackup, writeBackup } from "../../public/src/backup.js";
 
 const EXPECTED = new Set(["refused", "missing", "state", "invalid"]); // operations that rightly say no
 const NAMES = ["Данило", "Теодора", "Миро", "Ема", "Адам", "Лея", "Новаков", "Чарин"];
@@ -20,7 +23,8 @@ const DAY = 86_400_000;
 /** A phone: a tree on its own manual clock, plus the History it keeps. */
 export function makePhone({ device, prefix, start = T0, records } = {}) {
   const h = makeTree({ device, prefix, start, records });
-  return { h, device, get tree() { return h.tree; }, get wall() { return h.wall; }, history: [], reports: [] };
+  // `h` is replaced when the phone restores a backup (task 4.6), so the getters look it up each time
+  return { h, device, get tree() { return this.h.tree; }, get wall() { return this.h.wall; }, history: [], reports: [] };
 }
 
 /** Adopt a change and record it in History, as storage would in one transaction. */
@@ -134,6 +138,33 @@ export const OPS = {
   interrupted: (sim, p) => sim.syncWith(p, { stopAfter: sim.pick(["step1", "step2", "step2"]) }),
 };
 
+// ---------------------------------------------------------------- file operations (task 4.6)
+// Pass FILE_OPS as `extra` to simulate(): a phone imports one of three invented GEDCOM files, or restores a backup
+// under a new device ID. They overlap on purpose: MyHeritage and Gramps share _UIDs, so imports match people.
+const GED_FILES = ["myheritage", "gramps", "uds2gedcom"].map(name => new Uint8Array(readFileSync(new URL(`./${name}.ged`, import.meta.url))));
+const SETTINGS = { lang: "en", latin: false };
+
+export const FILE_OPS = {
+  import: async (sim, p) => {
+    const result = await importGedcom(p.tree, sim.pick(GED_FILES), { now: p.wall.now, newId: sim.freshId });
+    return commit(p, result.change);
+  },
+  /** Back up, then restore: the phone's own current state, or (half the time) the backup it took last time, which is stale. */
+  restore: async (sim, p) => {
+    const fresh = writeBackup({ records: p.tree.records(), meta: { name: p.tree.name, thisIsMe: null, settings: SETTINGS }, history: p.history, createdAt: p.wall.now });
+    const source = p.snapshot && sim.rand() < 0.5 ? p.snapshot : fresh;
+    p.snapshot = fresh;
+    const checked = validateBackup(source, { now: p.wall.now });
+    assert.equal(checked.ok, true, JSON.stringify(checked.errors.slice(0, 3)));
+    const device = pid("7", ++sim.restores);
+    const restored = restoreBackup(checked.valid, { device, name: p.tree.name, now: p.wall.now });
+    p.h = makeTree({ device, name: restored.meta.name, records: restored.records, prefix: "9", start: p.wall.now, from: sim.restores * 1_000_000 });
+    p.device = device;
+    p.history = restored.history;
+    return true;
+  },
+};
+
 // Weights: how often each op comes up in a run.
 const WEIGHTS = { add: 4, addRelative: 8, edit: 12, editPartnership: 4, delete: 4, restore: 3, merge: 6, notSame: 3, unlink: 3, erase: 2, eraseRest: 1, undo: 6, deviceName: 2, sync: 14, interrupted: 5 };
 
@@ -150,6 +181,9 @@ export async function simulate({ seed, devices = 3, rounds = 60, ops, extra = {}
     pick: list => list[sim.int(list.length)],
     tally: {},
     phones: [],
+    restores: 0,
+    ids: 0,
+    freshId: () => pid("8", ++sim.ids),
     somebody: p => {
       const ids = [...p.tree.view().people.keys()];
       return ids.length ? sim.pick(ids) : pid("f", 9);

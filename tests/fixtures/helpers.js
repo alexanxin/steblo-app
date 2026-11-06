@@ -11,10 +11,10 @@ export const pid = (prefix, n) => prefix + String(n).padStart(15, "0");
  * A tree on a manual wall clock, with predictable new IDs (prefix + 1, 2, 3 …).
  * `adopt` is applied for you by run(); ops that return a change are checked by the tests.
  */
-export function makeTree({ device = pid("d", 1), name = "Test phone", records = new Map(), prefix = "a", start = T0 } = {}) {
+export function makeTree({ device = pid("d", 1), name = "Test phone", records = new Map(), prefix = "a", start = T0, from = 0 } = {}) {
   const wall = { now: start };
   const clock = createClock({ now: () => wall.now });
-  let n = 0;
+  let n = from;
   const newId = () => pid(prefix, ++n);
   const tree = createTree({ device, name, records, clock, now: () => wall.now, newId });
   const h = {

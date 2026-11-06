@@ -1,0 +1,88 @@
+﻿0 HEAD
+1 SOUR UDS2GEDCOM
+2 VERS 0.1.0
+2 NAME uds2gedcom
+1 SUBM @U1@
+1 GEDC
+2 VERS 5.5.1
+2 FORM LINEAGE-LINKED
+1 CHAR UTF-8
+0 @U1@ SUBM
+1 NAME uds2gedcom
+0 @P1@ INDI
+1 NAME Данило /Новаков/
+2 GIVN Данило
+2 SURN Новаков
+2 ROMN Danilo /Novakov/
+3 TYPE romanized
+1 NAME Дане
+2 TYPE aka
+1 SEX M
+1 BIRT
+2 DATE 14 MAR 1938
+2 PLAC Варново
+1 DEAT
+2 DATE INT 1990 (околу 1990)
+1 OCCU воденичар
+1 FAMS @F1@
+1 NOTE From: file-a.uds #12
+2 CONT Records disagree on birth: 1938 (file-a.uds #12); 1939 (file-b.uds #3)
+0 @P2@ INDI
+1 NAME Теодора /Новакова/
+2 GIVN Теодора
+2 SURN Новакова
+2 ROMN Teodora /Novakova/
+3 TYPE romanized
+1 SEX F
+1 BIRT
+2 DATE (пред војната)
+1 FAMS @F1@
+0 @P3@ INDI
+1 NAME Миро /Новаков/
+2 GIVN Миро
+2 SURN Новаков
+2 ROMN Miro /Novakov/
+3 TYPE romanized
+1 SEX M
+1 BIRT
+2 DATE 1966
+1 FAMC @F1@
+1 FAMS @F2@
+0 @P4@ INDI
+1 NAME Ема /Новакова/
+2 GIVN Ема
+2 SURN Новакова
+2 ROMN Ema /Novakova/
+3 TYPE romanized
+1 SEX F
+1 BIRT
+2 DATE JUL 1969
+1 FAMC @F1@
+1 NOTE Email: ema@@example.test
+0 @P5@ INDI
+1 NAME Леа /Чарин/
+2 GIVN Леа
+2 SURN Чарин
+1 SEX U
+1 FAMS @F2@
+0 @P6@ INDI
+1 NAME Адам /Новаков/
+2 GIVN Адам
+2 SURN Новаков
+1 SEX M
+1 BIRT
+2 DATE 2001
+1 FAMC @F2@
+0 @F1@ FAM
+1 HUSB @P1@
+1 WIFE @P2@
+1 CHIL @P3@
+1 CHIL @P4@
+1 MARR
+2 DATE 1963
+1 NOTE From: file-a.uds #40
+0 @F2@ FAM
+1 HUSB @P3@
+1 WIFE @P5@
+1 CHIL @P6@
+0 TRLR
