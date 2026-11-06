@@ -1046,6 +1046,7 @@ export function readRgba({ data, width, height }, jsQR, { mode = "byte" } = {}) 
     <label>Level <select id="ec"><option>L</option><option>M</option></select></label>
     <label>Mode <select id="qrmode"><option>byte</option><option>base45</option></select></label>
     <label>Coding <select id="coding"><option value="1">LT</option><option value="0">cyclic</option></select></label>
+    <label>Scan px <select id="scanpx"><option>640</option><option>480</option><option>800</option><option value="0">full</option></select></label>
     <label><input id="worker" type="checkbox" checked> Worker</label>
   </div>
   <div id="actions">
@@ -1165,7 +1166,7 @@ if ($("install")) $("install").onclick = async () => { // absent in a stale cach
 };
 setTimeout(() => { if (!installPrompt && !installed) log({ event: "installable", value: false, after: "60 s" }); }, 60000);
 
-const settings = () => ({ kb: number("kb"), block: number("block"), fps: number("fps"), ec: $("ec").value, mode: $("qrmode").value, coding: number("coding"), worker: $("worker").checked });
+const settings = () => ({ kb: number("kb"), block: number("block"), fps: number("fps"), ec: $("ec").value, mode: $("qrmode").value, coding: number("coding"), worker: $("worker").checked, scanPx: number("scanpx") });
 let stopper = null;
 const stop = () => { stopper?.(); stopper = null; $("qr").classList.remove("on"); $("video").classList.remove("on"); };
 $("stop").onclick = stop;
@@ -1254,8 +1255,15 @@ $("scan").onclick = async () => {
   const loop = () => {
     if (!running) return;
     if (!busy && video.videoWidth) {
-      grab.width = video.videoWidth; grab.height = video.videoHeight;
-      g.drawImage(video, 0, 0);
+      // The centre square, shrunk: jsQR then searches a small picture that is mostly code.
+      const vw = video.videoWidth, vh = video.videoHeight, crop = Math.round(Math.min(vw, vh) * 0.8);
+      if (s.scanPx) {
+        grab.width = grab.height = Math.min(crop, s.scanPx);
+        g.drawImage(video, (vw - crop) / 2, (vh - crop) / 2, crop, crop, 0, 0, grab.width, grab.height);
+      } else {
+        grab.width = vw; grab.height = vh;
+        g.drawImage(video, 0, 0);
+      }
       const img = g.getImageData(0, 0, grab.width, grab.height);
       if (worker) { busy = true; worker.postMessage({ pixels: img.data.buffer, width: img.width, height: img.height }, [img.data.buffer]); }
       else {
