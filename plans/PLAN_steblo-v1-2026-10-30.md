@@ -1049,6 +1049,7 @@ export function readRgba({ data, width, height }, jsQR, { mode = "byte" } = {}) 
     <label><input id="worker" type="checkbox" checked> Worker</label>
   </div>
   <div id="actions">
+    <button id="install" hidden>Install</button>
     <button id="show">Show</button>
     <button id="scan">Scan</button>
     <button id="stop">Stop</button>
@@ -1101,7 +1102,7 @@ self.onmessage = ({ data }) => {
 };
 ```
 
-- [ ] **Step 5: Write `public/spike/sw.js`.** Android Chrome offers Install only when a service worker has a real fetch handler (https://developer.chrome.com/blog/update-install-criteria). Added 2026-11-05 at Alex's request, after the phones couldn't install the page. It doesn't change what the spike measures.
+- [ ] **Step 5: Write `public/spike/sw.js`.** Android Chrome offers Install only when a service worker has a real fetch handler (https://developer.chrome.com/blog/update-install-criteria). Added 2026-11-05 at Alex's request, after the phones couldn't install the page. It doesn't change what the spike measures. `spike.js` also shows an **Install** button once Chrome fires `beforeinstallprompt`, and logs `installable` true, or false after 60 s, so the log says whether Chrome considers the page installable.
 
 ```js
 // Spike only. Android Chrome offers "Install" only when a service worker has a real fetch
@@ -1145,6 +1146,24 @@ const status = text => { $("status").textContent = text; };
 const installed = matchMedia("(display-mode: standalone)").matches || navigator.standalone === true;
 $("mode").textContent = `${installed ? "Installed" : "Browser tab"} · ${navigator.userAgent}`;
 navigator.serviceWorker?.register("sw.js").catch(e => log({ event: "serviceWorker", error: String(e) }));
+
+// Chrome lets a page offer its own install only once Chrome finds it installable, so the
+// button doubles as the answer to "does Chrome think this can be installed?"
+let installPrompt = null;
+addEventListener("beforeinstallprompt", e => {
+  e.preventDefault();
+  installPrompt = e;
+  if ($("install")) $("install").hidden = false;
+  log({ event: "installable", value: true });
+});
+addEventListener("appinstalled", () => log({ event: "installed" }));
+if ($("install")) $("install").onclick = async () => { // absent in a stale cached page
+  installPrompt.prompt();
+  log({ event: "installPrompt", outcome: (await installPrompt.userChoice).outcome });
+  installPrompt = null;
+  $("install").hidden = true;
+};
+setTimeout(() => { if (!installPrompt && !installed) log({ event: "installable", value: false, after: "60 s" }); }, 60000);
 
 const settings = () => ({ kb: number("kb"), block: number("block"), fps: number("fps"), ec: $("ec").value, mode: $("qrmode").value, coding: number("coding"), worker: $("worker").checked });
 let stopper = null;

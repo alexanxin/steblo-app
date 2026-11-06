@@ -16,6 +16,24 @@ const installed = matchMedia("(display-mode: standalone)").matches || navigator.
 $("mode").textContent = `${installed ? "Installed" : "Browser tab"} · ${navigator.userAgent}`;
 navigator.serviceWorker?.register("sw.js").catch(e => log({ event: "serviceWorker", error: String(e) }));
 
+// Chrome lets a page offer its own install only once Chrome finds it installable, so the
+// button doubles as the answer to "does Chrome think this can be installed?"
+let installPrompt = null;
+addEventListener("beforeinstallprompt", e => {
+  e.preventDefault();
+  installPrompt = e;
+  if ($("install")) $("install").hidden = false;
+  log({ event: "installable", value: true });
+});
+addEventListener("appinstalled", () => log({ event: "installed" }));
+if ($("install")) $("install").onclick = async () => { // absent in a stale cached page
+  installPrompt.prompt();
+  log({ event: "installPrompt", outcome: (await installPrompt.userChoice).outcome });
+  installPrompt = null;
+  $("install").hidden = true;
+};
+setTimeout(() => { if (!installPrompt && !installed) log({ event: "installable", value: false, after: "60 s" }); }, 60000);
+
 const settings = () => ({ kb: number("kb"), block: number("block"), fps: number("fps"), ec: $("ec").value, mode: $("qrmode").value, coding: number("coding"), worker: $("worker").checked });
 let stopper = null;
 const stop = () => { stopper?.(); stopper = null; $("qr").classList.remove("on"); $("video").classList.remove("on"); };
