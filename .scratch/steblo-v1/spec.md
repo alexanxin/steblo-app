@@ -172,7 +172,7 @@ Everything stays on the phones. Every change is recorded and can be undone, and 
   - Install-first on iOS.
   - System fonts; English and Macedonian strings files; one "Show in Latin letters" switch.
 - **Security.** Strict CSP (see the reference spec; `'wasm-unsafe-eval'` only if the zxing-wasm decoder is chosen); no third-party requests; `textContent`-only rendering; one validator for every input path; caps checked before allocation; vendored libraries pinned with hashes.
-- **Spike first.** A throwaway page tests ten items under the production headers on Alex's iPhone and an Android phone (installed), each with a pass condition and a fallback (reference R17). Gate: a fixed 200 KB crosses in at most 2 minutes per direction. On a miss, building stops and Alex decides.
+- **Spike first.** A throwaway page tests ten items under the production headers on Alex's iPhone and an Android phone (installed), each with a pass condition and a fallback (reference R17). Gate: one lineage, 20 KB, crosses in at most 30 seconds per direction; larger trees sync more slowly with an estimate. On a miss, building stops and Alex decides.
 
 ## Testing Decisions
 

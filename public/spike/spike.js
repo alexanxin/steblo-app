@@ -34,7 +34,7 @@ if ($("install")) $("install").onclick = async () => { // absent in a stale cach
 };
 setTimeout(() => { if (!installPrompt && !installed) log({ event: "installable", value: false, after: "60 s" }); }, 60000);
 
-const settings = () => ({ kb: number("kb"), block: number("block"), fps: number("fps"), ec: $("ec").value, mode: $("qrmode").value, coding: number("coding"), worker: $("worker").checked, scanPx: number("scanpx") });
+const settings = () => ({ kb: number("kb"), block: number("block"), fps: number("fps"), ec: $("ec").value, mode: $("qrmode").value, coding: number("coding"), decoders: number("decoders"), scanPx: number("scanpx") });
 let stopper = null;
 const stop = () => { stopper?.(); stopper = null; $("qr").classList.remove("on"); $("video").classList.remove("on"); };
 $("stop").onclick = stop;
@@ -99,9 +99,10 @@ $("scan").onclick = async () => {
   const media = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment", width: { ideal: 1280 }, height: { ideal: 1280 } }, audio: false });
   video.srcObject = media; video.classList.add("on"); await video.play();
   const add = collector(), grab = document.createElement("canvas"), g = grab.getContext("2d", { willReadFrequently: true });
-  const worker = s.worker ? new Worker("decode-worker.js") : null;
+  // Several decoders in parallel, so more camera frames get a decode attempt.
+  const pool = Array.from({ length: s.decoders }, () => ({ worker: new Worker("decode-worker.js"), busy: false }));
   const scanStart = performance.now();
-  let running = true, busy = false, tries = 0, hits = 0, spent = 0, last = null, firstReadMs = null;
+  let running = true, tries = 0, hits = 0, spent = 0, last = null, firstReadMs = null;
   const take = (bytes, ms) => {
     tries += 1; spent += ms;
     if (!bytes) return;
@@ -119,10 +120,13 @@ $("scan").onclick = async () => {
       stop();
     }
   };
-  if (worker) worker.onmessage = ({ data }) => { busy = false; take(s.mode === "base45" ? (data.text ? new TextEncoder().encode(data.text) : null) : data.bytes, data.ms); };
+  for (const slot of pool) {
+    slot.worker.onmessage = ({ data }) => { slot.busy = false; take(s.mode === "base45" ? (data.text ? new TextEncoder().encode(data.text) : null) : data.bytes, data.ms); };
+  }
   const loop = () => {
     if (!running) return;
-    if (!busy && video.videoWidth) {
+    const slot = pool.find(p => !p.busy);
+    if ((slot || !pool.length) && video.videoWidth) {
       // The centre square, shrunk: jsQR then searches a small picture that is mostly code.
       const vw = video.videoWidth, vh = video.videoHeight, crop = Math.round(Math.min(vw, vh) * 0.8);
       if (s.scanPx) {
@@ -133,7 +137,7 @@ $("scan").onclick = async () => {
         g.drawImage(video, 0, 0);
       }
       const img = g.getImageData(0, 0, grab.width, grab.height);
-      if (worker) { busy = true; worker.postMessage({ pixels: img.data.buffer, width: img.width, height: img.height }, [img.data.buffer]); }
+      if (slot) { slot.busy = true; slot.worker.postMessage({ pixels: img.data.buffer, width: img.width, height: img.height }, [img.data.buffer]); }
       else {
         const start = performance.now(), hit = window.jsQR(img.data, img.width, img.height, { inversionAttempts: "dontInvert" });
         take(hit ? (s.mode === "base45" ? new TextEncoder().encode(hit.data) : Uint8Array.from(hit.binaryData)) : null, performance.now() - start);
@@ -142,7 +146,7 @@ $("scan").onclick = async () => {
     requestAnimationFrame(loop);
   };
   loop();
-  stopper = () => { running = false; worker?.terminate(); media.getTracks().forEach(t => t.stop()); video.srcObject = null; log({ event: "scanStopped", ...s, firstReadMs, reads: hits, tries, decodeMs: tries ? spent / tries : 0, blocks: last?.got ?? 0 }); };
+  stopper = () => { running = false; pool.forEach(p => p.worker.terminate()); media.getTracks().forEach(t => t.stop()); video.srcObject = null; log({ event: "scanStopped", ...s, firstReadMs, reads: hits, tries, decodeMs: tries ? spent / tries : 0, blocks: last?.got ?? 0 }); };
 };
 
 async function attempt(name, fn) {

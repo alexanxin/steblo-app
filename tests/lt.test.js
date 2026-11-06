@@ -27,3 +27,23 @@ for (const lost of [0.05, 0.2, 0.35]) {
     b.forEach((block, i) => assert.deepEqual(p.known[i], block));
   });
 }
+
+test("the tables are what their generator writes", async () => {
+  const { render } = await import("../scripts/lt-tables.mjs");
+  const { readFileSync } = await import("node:fs");
+  assert.equal(readFileSync(new URL("../public/src/lt-tables.js", import.meta.url), "utf8"), render());
+});
+
+test("every table rises to the top threshold", async () => {
+  const { TABLES } = await import("../public/src/lt-tables.js");
+  for (const t of TABLES) {
+    assert.equal(t.cdf.at(-1), 4294967295, `class ${t.k}`);
+    assert.ok(t.cdf.every((x, i) => i === 0 || x >= t.cdf[i - 1]), `class ${t.k} rises`);
+  }
+});
+
+test("large transfers send coded frames from the start", () => {
+  const b = blocks(150), got = encodeBlock(b, 9, 3), want = new Uint8Array(64);
+  for (const i of picks(9, 3, 150)) for (let j = 0; j < 64; j++) want[j] ^= b[i][j];
+  assert.deepEqual(got, want);
+});

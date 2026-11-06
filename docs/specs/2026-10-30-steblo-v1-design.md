@@ -195,7 +195,7 @@ Before anything else, a throwaway page runs under the production headers on Alex
 
 Real names may compress differently, and real notes should compress better than these random ones. Before the compact encoding, the same kind of tree measured 322 KB.
 
-**Gate.** A fixed 200 KB of encrypted data must cross in at most 2 minutes per direction, both ways. That is about 1.7 KB/s effective, counting missed frames. If it doesn't, building stops and the numbers go to Alex. A tree larger than the gate's still syncs; it just takes longer, and the estimate says so first.
+**Gate.** One lineage, about 400 people (20 KB of encrypted data), must cross in at most 30 seconds per direction, both ways. That is the typical sync, between relatives of one branch. If it doesn't, building stops and the numbers go to Alex. A larger tree still syncs; it just takes longer, and the estimate says so first. Alex chose this on 2026-11-06, after the first phone runs showed a 200 KB first sync taking 2.5–3.3 minutes with Android and a Mac.
 
 The spike needs HTTPS for the camera, so it is deployed as a public Vercel preview. That needs the GitHub repo and the Vercel project, created only with Alex's go-ahead.
 
@@ -241,7 +241,7 @@ Prior art: the private app tests its shared tree rules with `node --test`.
 |---|---|
 | QR too slow for large trees | Compact encoding (measured); gate on real phones; on a miss, Alex decides |
 | Real phones read fewer frames than hoped, so cyclic needs extra loops | Spike tests cyclic and LT together and measures the share of frames read |
-| Real trees are bigger than measured (long notes, more history) | Gate is 200 KB, above typical trees; byte-budget test; time estimate shown before sending |
+| A whole family tree takes minutes to sync the first time | Gate is one lineage; larger first syncs show a time estimate first; later syncs send only changes. If this proves too slow in use, sharing one lineage at a time or a file transfer for big first syncs are the next steps |
 | iOS: storage separate from Safari; camera, Wake Lock or file save quirks | Install-first; spike items with fallbacks |
 | A sync or merge bug silently corrupts or diverges trees | Convergence tests over full state; one validator; transactions; bucket fingerprints heal differences at the next sync; undo; backups |
 | A 4-byte bucket hash collides and hides a difference | About 1 in 4 billion per bucket; the difference heals at that bucket's next change |
