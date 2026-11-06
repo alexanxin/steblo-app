@@ -1111,7 +1111,7 @@ export function readRgba({ data, width, height }, jsQR, { mode = "byte" } = {}) 
     <label>Mode <select id="qrmode"><option>byte</option><option>base45</option></select></label>
     <label>Coding <select id="coding"><option value="1">LT</option><option value="0">cyclic</option></select></label>
     <label>Scan px <select id="scanpx"><option>640</option><option>480</option><option>800</option><option value="0">full</option></select></label>
-    <label>Decoders <select id="decoders"><option value="2">2 workers</option><option value="1">1 worker</option><option value="3">3 workers</option><option value="0">main thread</option><option value="-1">native (base45 only)</option></select></label>
+    <label>Decoders <select id="decoders"><option value="2">2 workers</option><option value="1">1 worker</option><option value="3">3 workers</option><option value="0">main thread</option><option value="-1">native (Android)</option></select></label>
   </div>
   <div id="actions">
     <button id="install" hidden>Install</button>
@@ -1209,7 +1209,8 @@ const log = entry => {
 };
 const status = text => { $("status").textContent = text; };
 const installed = matchMedia("(display-mode: standalone)").matches || navigator.standalone === true;
-$("mode").textContent = `${installed ? "Installed" : "Browser tab"} · ${navigator.userAgent}`;
+const VERSION = 8; // shown on the page, so both devices can be checked to run the same build
+$("mode").textContent = `Spike v${VERSION} · ${installed ? "Installed" : "Browser tab"} · ${navigator.userAgent}`;
 navigator.serviceWorker?.register("sw.js").catch(e => log({ event: "serviceWorker", error: String(e) }));
 
 // Chrome lets a page offer its own install only once Chrome finds it installable, so the
@@ -1259,7 +1260,7 @@ $("show").onclick = async () => {
   const streamId = crypto.getRandomValues(new Uint32Array(1))[0], length = stream.length;
   const lock = await navigator.wakeLock?.request("screen").catch(() => null);
   const canvas = $("qr"); canvas.classList.add("on");
-  log({ event: "show", ...s, blocks: blocks.length, hash: await shortHash(stream), wakeLock: !!lock });
+  log({ event: "show", version: VERSION, ...s, blocks: blocks.length, hash: await shortHash(stream), wakeLock: !!lock });
   let n = 0, running = true;
   const started = performance.now();
   const tick = () => {
@@ -1303,10 +1304,19 @@ $("scan").onclick = async () => {
   let nativeBusy = false;
   const scanStart = performance.now();
   let running = true, tries = 0, hits = 0, spent = 0, last = null, firstReadMs = null;
-  const take = (bytes, ms) => {
+  // The scanner works out each frame's format itself (raw bytes or base45 text), so its own
+  // Mode setting doesn't have to match the phone that shows the codes.
+  const frameOf = (text, bytes) => {
+    const latin1 = text && /^[\u0000-\u00ff]*$/.test(text) ? Uint8Array.from(text, ch => ch.charCodeAt(0)) : null;
+    for (const candidate of [bytes, latin1]) {
+      const f = candidate && parseFrame(candidate);
+      if (f) return f;
+    }
+    try { return text ? parseFrame(unb45(text)) : null; } catch { return null; }
+  };
+  const take = (text, bytes, ms) => {
     tries += 1; spent += ms;
-    if (!bytes) return;
-    const f = parseFrame(s.mode === "base45" ? unb45(new TextDecoder().decode(bytes)) : bytes);
+    const f = frameOf(text, bytes);
     if (!f) return;
     hits += 1;
     firstReadMs ??= performance.now() - scanStart;
@@ -1315,13 +1325,13 @@ $("scan").onclick = async () => {
     status(`${last.got}/${last.k} blocks, ${hits}/${tries} reads, ${(spent / tries).toFixed(0)} ms each, ${secs.toFixed(0)} s`);
     if (last.got === last.k) {
       const read = last.ns.size / (last.high - last.low + 1);
-      log({ event: "done", ...s, length: last.length, seconds: secs, kbPerSec: last.length / 1024 / secs, shareRead: read, firstReadMs, reads: hits, tries, decodeMs: spent / tries, frames: last.ns.size, k: last.k });
+      log({ event: "done", version: VERSION, ...s, length: last.length, seconds: secs, kbPerSec: last.length / 1024 / secs, shareRead: read, firstReadMs, reads: hits, tries, decodeMs: spent / tries, frames: last.ns.size, k: last.k });
       status(`Done: ${(last.length / 1024 / secs).toFixed(2)} KB/s in ${secs.toFixed(0)} s`);
       stop();
     }
   };
   for (const slot of pool) {
-    slot.worker.onmessage = ({ data }) => { slot.busy = false; take(s.mode === "base45" ? (data.text ? new TextEncoder().encode(data.text) : null) : data.bytes, data.ms); };
+    slot.worker.onmessage = ({ data }) => { slot.busy = false; take(data.text, data.bytes, data.ms); };
   }
   const loop = () => {
     if (!running) return;
@@ -1342,12 +1352,12 @@ $("scan").onclick = async () => {
         const start = performance.now();
         native.detect(grab).then(codes => {
           nativeBusy = false;
-          take(codes[0] ? new TextEncoder().encode(codes[0].rawValue) : null, performance.now() - start);
+          take(codes[0]?.rawValue, null, performance.now() - start);
         }, () => { nativeBusy = false; });
       } else if (slot) { slot.busy = true; slot.worker.postMessage({ pixels: img.data.buffer, width: img.width, height: img.height }, [img.data.buffer]); }
       else {
         const start = performance.now(), hit = window.jsQR(img.data, img.width, img.height, { inversionAttempts: "dontInvert" });
-        take(hit ? (s.mode === "base45" ? new TextEncoder().encode(hit.data) : Uint8Array.from(hit.binaryData)) : null, performance.now() - start);
+        take(hit?.data, hit ? Uint8Array.from(hit.binaryData) : null, performance.now() - start);
       }
     }
     requestAnimationFrame(loop);
