@@ -1,13 +1,11 @@
 // Frame bytes ⇄ QR codes. The decoder is passed in, because jsQR loads differently
 // in Node (require) and in the browser (classic script in a worker or page).
 import qrcode from "../vendor/qrcode.mjs";
-import { encode as b45, decode as unb45 } from "./base45.js";
 
 /** @returns {{size:number, dark:(r:number,c:number)=>boolean}} */
-export function toMatrix(bytes, { ec = "L", mode = "byte" } = {}) {
+export function toMatrix(bytes, { ec = "L" } = {}) {
   const q = qrcode(0, ec);
-  if (mode === "base45") q.addData(b45(bytes), "Alphanumeric");
-  else q.addData(String.fromCharCode(...bytes), "Byte");
+  q.addData(String.fromCharCode(...bytes), "Byte");
   q.make();
   return { size: q.getModuleCount(), dark: (r, c) => q.isDark(r, c) };
 }
@@ -24,8 +22,8 @@ export function toRgba(m, { scale = 4, quiet = 4 } = {}) {
   return { data, width, height: width };
 }
 
-export function readRgba({ data, width, height }, jsQR, { mode = "byte" } = {}) {
+export function readRgba({ data, width, height }, jsQR) {
   const hit = jsQR(data, width, height, { inversionAttempts: "dontInvert" });
   if (!hit) return null;
-  return mode === "base45" ? unb45(hit.data) : Uint8Array.from(hit.binaryData);
+  return Uint8Array.from(hit.binaryData);
 }

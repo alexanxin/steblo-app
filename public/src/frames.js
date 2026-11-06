@@ -6,8 +6,7 @@ export const MAX_LENGTH = 4 * 1024 * 1024;
 export const MAX_BLOCKS = 16384;
 export const MIN_BLOCK = 300;
 export const MAX_BLOCK = 1500;
-export const CYCLIC = 0;
-export const LT = 1;
+export const LT = 1; // the only coding (the spike measured it against cyclic repeat)
 
 const TABLE = Uint32Array.from({ length: 256 }, (_, n) => {
   let c = n;
@@ -23,7 +22,7 @@ export function crc32(...parts) {
 
 export const blockCount = (length, blockSize) => Math.ceil(length / blockSize);
 
-export function makeFrame({ streamId, length, blockSize, coding = CYCLIC, n }, block) {
+export function makeFrame({ streamId, length, blockSize, coding = LT, n }, block) {
   const out = new Uint8Array(HEADER + blockSize);
   const v = new DataView(out.buffer);
   v.setUint8(0, 1);
@@ -42,7 +41,7 @@ export function parseFrame(bytes) {
   const v = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
   const version = v.getUint8(0), streamId = v.getUint32(1), length = v.getUint32(5);
   const blockSize = v.getUint16(9), coding = v.getUint8(11), n = v.getUint32(12), crc = v.getUint32(16);
-  if (version !== 1 || coding > LT) return null;
+  if (version !== 1 || coding !== LT) return null;
   if (length < 1 || length > MAX_LENGTH) return null;
   if (blockSize < MIN_BLOCK || blockSize > MAX_BLOCK) return null;
   if (blockCount(length, blockSize) > MAX_BLOCKS) return null;
@@ -62,12 +61,6 @@ export function splitBlocks(stream, blockSize) {
   return blocks;
 }
 
-/** Frames for a stream: an endless cyclic sequence. */
-export function* cyclicFrames(stream, { streamId, blockSize }) {
-  const blocks = splitBlocks(stream, blockSize), length = stream.length;
-  for (let n = 0; ; n++) yield makeFrame({ streamId, length, blockSize, coding: CYCLIC, n }, blocks[n % blocks.length]);
-}
-
 /** Frames for a stream: the blocks, then endless XOR combinations of them. */
 export function* ltFrames(stream, { streamId, blockSize }) {
   const blocks = splitBlocks(stream, blockSize), length = stream.length;
@@ -83,10 +76,7 @@ export class Collector {
   }
   #start(f) {
     const k = blockCount(f.length, f.blockSize);
-    this.stream = {
-      id: f.streamId, length: f.length, blockSize: f.blockSize, k, got: 0, at: this.now(),
-      peel: f.coding === LT ? new Peeler(k, f.streamId) : null, blocks: new Array(k),
-    };
+    this.stream = { id: f.streamId, length: f.length, blockSize: f.blockSize, k, got: 0, at: this.now(), peel: new Peeler(k, f.streamId) };
   }
   add(bytes) {
     const f = parseFrame(bytes);
@@ -97,8 +87,7 @@ export class Collector {
       this.#start(f);
     }
     const s = this.stream, before = s.got;
-    if (s.peel) s.got = s.peel.add(f.n, f.block);
-    else if (!s.blocks[f.n % s.k]) { s.blocks[f.n % s.k] = f.block.slice(); s.got += 1; }
+    s.got = s.peel.add(f.n, f.block);
     if (s.got !== before) s.at = this.now();
     return this.progress();
   }
@@ -108,7 +97,7 @@ export class Collector {
   }
   bytes() {
     const s = this.stream, out = new Uint8Array(s.k * s.blockSize);
-    (s.peel ? s.peel.known : s.blocks).forEach((b, i) => out.set(b, i * s.blockSize));
+    s.peel.known.forEach((b, i) => out.set(b, i * s.blockSize));
     return out.subarray(0, s.length);
   }
 }

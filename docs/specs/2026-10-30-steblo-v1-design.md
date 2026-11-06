@@ -60,7 +60,7 @@ QR only (ADR 0002). Web Bluetooth can't advertise and isn't in iOS Safari, and W
 
 ### Frame coding
 
-The scanning phone will miss some frames. **Cyclic repeat** shows the blocks in a loop: simple, but a missed block costs a full loop. **LT fountain coding** shows random XOR combinations of blocks after the first pass, so almost any frames will do: about 60 more lines and some decoding work. Simulated at the gate's size (334 blocks), cyclic needs 2.5 frames per block at 5% lost and 3.9 at 20%; LT needs 1.8 and 2.2. The spike tests both on real phones, and only the winner ships.
+The scanning phone misses many frames: about 40–60% in the spike. **Cyclic repeat** shows the blocks in a loop: simple, but a missed block costs a full loop, about 2.5–3.9 frames per block at that loss. **LT fountain coding** shows random XOR combinations of blocks, so almost any frames will do. With a table tuned to the transfer size it needs about 1.24 frames read per block on a whole tree, and 1.42 on a lineage. LT ships; cyclic was dropped after the spike (`docs/specs/spike-results.md`).
 
 ## Design
 
@@ -185,6 +185,8 @@ Once the tree holds a person, the app requests persistent storage. iOS 17+ suppo
 
 Before anything else, a throwaway page runs under the production headers on Alex's iPhone (iOS 17+) and an Android phone, both installed to the Home Screen. Reference R17 lists its items, each with a pass condition and a fallback. They include the tuning grid, camera, Wake Lock, file save, storage isolation, and redraw speed on a real phone.
 
+**Result (2026-11-06):** the gate passed provisionally, with Alex's Android phone and his Mac standing in for an iPhone. 40 KB, twice the gate size, crossed in 10–21 seconds in both directions. One iPhone run each way is still owed before release. Details: `docs/specs/spike-results.md`.
+
 **Payload measurement** (Node 26.12.1, `deflate-raw`, invented trees of 3,420 people with 400 given names, 300 surnames, 5 devices and about 6,100 links; compact encoding, 64-bit IDs, one clock per record):
 
 | Tree | Size |
@@ -240,7 +242,7 @@ Prior art: the private app tests its shared tree rules with `node --test`.
 | Risk | Mitigation |
 |---|---|
 | QR too slow for large trees | Compact encoding (measured); gate on real phones; on a miss, Alex decides |
-| Real phones read fewer frames than hoped, so cyclic needs extra loops | Spike tests cyclic and LT together and measures the share of frames read |
+| Phones read fewer frames than hoped, or results depend on how the phone is held | LT coding with size-tuned tables; scanner crops the centre and decodes in 2 workers; measured in the spike; iPhone still to be tested |
 | A whole family tree takes minutes to sync the first time | Gate is one lineage; larger first syncs show a time estimate first; later syncs send only changes. If this proves too slow in use, sharing one lineage at a time or a file transfer for big first syncs are the next steps |
 | iOS: storage separate from Safari; camera, Wake Lock or file save quirks | Install-first; spike items with fallbacks |
 | A sync or merge bug silently corrupts or diverges trees | Convergence tests over full state; one validator; transactions; bucket fingerprints heal differences at the next sync; undo; backups |

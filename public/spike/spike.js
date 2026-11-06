@@ -1,7 +1,6 @@
 // Throwaway: measures QR transfer and device features on real phones (reference R17).
-import { CYCLIC, LT, blockCount, makeFrame, parseFrame, splitBlocks } from "../src/frames.js";
+import { blockCount, makeFrame, parseFrame, splitBlocks } from "../src/frames.js";
 import { Peeler, encodeBlock } from "../src/lt.js";
-import { decode as unb45 } from "../src/base45.js";
 import { toMatrix } from "../src/qrcodec.js";
 
 const $ = id => document.getElementById(id);
@@ -13,7 +12,7 @@ const log = entry => {
 };
 const status = text => { $("status").textContent = text; };
 const installed = matchMedia("(display-mode: standalone)").matches || navigator.standalone === true;
-const VERSION = 8; // shown on the page, so both devices can be checked to run the same build
+const VERSION = 9; // shown on the page, so both devices can be checked to run the same build
 $("mode").textContent = `Spike v${VERSION} · ${installed ? "Installed" : "Browser tab"} · ${navigator.userAgent}`;
 navigator.serviceWorker?.register("sw.js").catch(e => log({ event: "serviceWorker", error: String(e) }));
 
@@ -35,7 +34,7 @@ if ($("install")) $("install").onclick = async () => { // absent in a stale cach
 };
 setTimeout(() => { if (!installPrompt && !installed) log({ event: "installable", value: false, after: "60 s" }); }, 60000);
 
-const settings = () => ({ kb: number("kb"), block: number("block"), fps: number("fps"), ec: $("ec").value, mode: $("qrmode").value, coding: number("coding"), decoders: number("decoders"), scanPx: number("scanpx") });
+const settings = () => ({ kb: number("kb"), block: number("block"), fps: number("fps"), ec: $("ec").value, decoders: number("decoders"), scanPx: number("scanpx") });
 let stopper = null;
 const stop = () => { stopper?.(); stopper = null; $("qr").classList.remove("on"); $("video").classList.remove("on"); };
 $("stop").onclick = stop;
@@ -69,8 +68,7 @@ $("show").onclick = async () => {
   const started = performance.now();
   const tick = () => {
     if (!running) return;
-    const body = s.coding === LT ? encodeBlock(blocks, streamId, n) : blocks[n % blocks.length];
-    draw(canvas, toMatrix(makeFrame({ streamId, length, blockSize: s.block, coding: s.coding, n }, body), { ec: s.ec, mode: s.mode }));
+    draw(canvas, toMatrix(makeFrame({ streamId, length, blockSize: s.block, n }, encodeBlock(blocks, streamId, n)), { ec: s.ec }));
     n += 1;
     status(`Showing frame ${n}, ${(n / ((performance.now() - started) / 1000)).toFixed(1)} fps`);
     const next = started + n * (1000 / s.fps);
@@ -85,11 +83,10 @@ function collector() {
   return f => {
     if (!st || st.id !== f.streamId) {
       const k = blockCount(f.length, f.blockSize);
-      st = { id: f.streamId, k, peel: f.coding === LT ? new Peeler(k, f.streamId) : null, blocks: new Array(k), got: 0, first: performance.now(), ns: new Set(), low: f.n, high: f.n, length: f.length };
+      st = { id: f.streamId, k, peel: new Peeler(k, f.streamId), got: 0, first: performance.now(), ns: new Set(), low: f.n, high: f.n, length: f.length };
     }
     st.ns.add(f.n); st.low = Math.min(st.low, f.n); st.high = Math.max(st.high, f.n);
-    if (st.peel) st.got = st.peel.add(f.n, f.block);
-    else if (!st.blocks[f.n % st.k]) { st.blocks[f.n % st.k] = f.block.slice(); st.got += 1; }
+    st.got = st.peel.add(f.n, f.block);
     return st;
   };
 }
@@ -102,25 +99,11 @@ $("scan").onclick = async () => {
   const add = collector(), grab = document.createElement("canvas"), g = grab.getContext("2d", { willReadFrequently: true });
   // Several decoders in parallel, so more camera frames get a decode attempt.
   const pool = Array.from({ length: Math.max(0, s.decoders) }, () => ({ worker: new Worker("decode-worker.js"), busy: false }));
-  // Android Chrome's built-in QR reader. Its text result is safe only for base45 frames.
-  const native = s.decoders < 0 && "BarcodeDetector" in self ? new BarcodeDetector({ formats: ["qr_code"] }) : null;
-  if (s.decoders < 0) log({ event: "native", available: !!native, mode: s.mode });
-  let nativeBusy = false;
   const scanStart = performance.now();
   let running = true, tries = 0, hits = 0, spent = 0, last = null, firstReadMs = null;
-  // The scanner works out each frame's format itself (raw bytes or base45 text), so its own
-  // Mode setting doesn't have to match the phone that shows the codes.
-  const frameOf = (text, bytes) => {
-    const latin1 = text && /^[\u0000-\u00ff]*$/.test(text) ? Uint8Array.from(text, ch => ch.charCodeAt(0)) : null;
-    for (const candidate of [bytes, latin1]) {
-      const f = candidate && parseFrame(candidate);
-      if (f) return f;
-    }
-    try { return text ? parseFrame(unb45(text)) : null; } catch { return null; }
-  };
-  const take = (text, bytes, ms) => {
+  const take = (bytes, ms) => {
     tries += 1; spent += ms;
-    const f = frameOf(text, bytes);
+    const f = bytes && parseFrame(bytes);
     if (!f) return;
     hits += 1;
     firstReadMs ??= performance.now() - scanStart;
@@ -135,12 +118,12 @@ $("scan").onclick = async () => {
     }
   };
   for (const slot of pool) {
-    slot.worker.onmessage = ({ data }) => { slot.busy = false; take(data.text, data.bytes, data.ms); };
+    slot.worker.onmessage = ({ data }) => { slot.busy = false; take(data.bytes, data.ms); };
   }
   const loop = () => {
     if (!running) return;
     const slot = pool.find(p => !p.busy);
-    if ((slot || !pool.length) && !nativeBusy && video.videoWidth) {
+    if ((slot || !pool.length) && video.videoWidth) {
       // The centre square, shrunk: jsQR then searches a small picture that is mostly code.
       const vw = video.videoWidth, vh = video.videoHeight, crop = Math.round(Math.min(vw, vh) * 0.8);
       if (s.scanPx) {
@@ -150,18 +133,11 @@ $("scan").onclick = async () => {
         grab.width = vw; grab.height = vh;
         g.drawImage(video, 0, 0);
       }
-      const img = native ? null : g.getImageData(0, 0, grab.width, grab.height);
-      if (native) {
-        nativeBusy = true;
-        const start = performance.now();
-        native.detect(grab).then(codes => {
-          nativeBusy = false;
-          take(codes[0]?.rawValue, null, performance.now() - start);
-        }, () => { nativeBusy = false; });
-      } else if (slot) { slot.busy = true; slot.worker.postMessage({ pixels: img.data.buffer, width: img.width, height: img.height }, [img.data.buffer]); }
+      const img = g.getImageData(0, 0, grab.width, grab.height);
+      if (slot) { slot.busy = true; slot.worker.postMessage({ pixels: img.data.buffer, width: img.width, height: img.height }, [img.data.buffer]); }
       else {
         const start = performance.now(), hit = window.jsQR(img.data, img.width, img.height, { inversionAttempts: "dontInvert" });
-        take(hit?.data, hit ? Uint8Array.from(hit.binaryData) : null, performance.now() - start);
+        take(hit ? Uint8Array.from(hit.binaryData) : null, performance.now() - start);
       }
     }
     requestAnimationFrame(loop);

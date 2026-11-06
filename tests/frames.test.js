@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { randomBytes } from "node:crypto";
-import { Collector, HEADER, crc32, cyclicFrames, ltFrames, makeFrame, parseFrame } from "../public/src/frames.js";
+import { Collector, HEADER, crc32, ltFrames, makeFrame, parseFrame } from "../public/src/frames.js";
 
 const frame = () => makeFrame({ streamId: 7, length: 400, blockSize: 300, n: 0 }, new Uint8Array(300));
 
@@ -12,7 +12,12 @@ test("crc32 matches the standard check value", () => {
 
 test("a frame survives a round trip", () => {
   const f = parseFrame(frame());
-  assert.deepEqual([f.streamId, f.length, f.blockSize, f.coding, f.n], [7, 400, 300, 0, 0]);
+  assert.deepEqual([f.streamId, f.length, f.blockSize, f.coding, f.n], [7, 400, 300, 1, 0]);
+});
+
+test("frames with another coding are rejected", () => {
+  const f = makeFrame({ streamId: 7, length: 400, blockSize: 300, coding: 0, n: 0 }, new Uint8Array(300));
+  assert.equal(parseFrame(f), null);
 });
 
 test("corrupt frames are rejected", () => {
@@ -33,7 +38,7 @@ test("headers over the caps are rejected before any block is read", () => {
 });
 
 test("the collector rebuilds a stream with frames lost and shuffled", () => {
-  const stream = randomBytes(5000), gen = cyclicFrames(stream, { streamId: 1, blockSize: 300 });
+  const stream = randomBytes(5000), gen = ltFrames(stream, { streamId: 1, blockSize: 300 });
   const c = new Collector();
   const frames = Array.from({ length: 300 }, () => gen.next().value).sort(() => Math.random() - 0.5);
   for (const f of frames) { if (Math.random() < 0.2) continue; if (c.add(f).done) break; }
@@ -55,8 +60,8 @@ test("the collector rebuilds an LT stream with frames lost", () => {
 test("the collector ignores another stream, then moves to it after a stall", () => {
   let t = 0;
   const c = new Collector({ now: () => t });
-  const a = cyclicFrames(randomBytes(900), { streamId: 1, blockSize: 300 });
-  const b = cyclicFrames(randomBytes(600), { streamId: 2, blockSize: 300 });
+  const a = ltFrames(randomBytes(900), { streamId: 1, blockSize: 300 });
+  const b = ltFrames(randomBytes(600), { streamId: 2, blockSize: 300 });
   c.add(a.next().value);
   c.add(b.next().value);
   assert.deepEqual(c.progress(), { received: 1, total: 3, done: false });

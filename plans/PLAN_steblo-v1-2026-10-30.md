@@ -40,7 +40,7 @@
 | `scripts/privacy-check.mjs`, `scripts/privacy-allow.txt` | 0 | Name leak check |
 | `public/vendor/*` | 0 | Vendored QR libraries, hashes, licences |
 | `public/src/names.js` | 0, 1 | Matching key; surname forms; name relations |
-| `public/src/frames.js`, `base45.js`, `lt.js`, `qrcodec.js` | 0 | Bytes ⇄ QR frames |
+| `public/src/frames.js`, `lt.js`, `lt-tables.js`, `qrcodec.js`; `scripts/lt-tables.mjs` | 0 | Bytes ⇄ QR frames |
 | `public/spike/*` | 0 | Throwaway measuring page, deleted in task 6.1 |
 | `public/src/clock.js` | 1 | Times and ordering |
 | `public/src/records.js` | 1 | Record kinds, validator, later-wins rule |
@@ -624,6 +624,14 @@ test("every table rises to the top threshold", async () => {
   }
 });
 
+// Pinned on 2026-11-06 with the tables in public/src/lt-tables.js. If this changes, the wire
+// format changed: phones on the old and new code can no longer read each other.
+const PINNED = [23, 88];
+
+test("picks are pinned for the format", () => {
+  assert.deepEqual(picks(1, 1000, 334), PINNED);
+});
+
 test("large transfers send coded frames from the start", () => {
   const b = blocks(150), got = encodeBlock(b, 9, 3), want = new Uint8Array(64);
   for (const i of picks(9, 3, 150)) for (let j = 0; j < 64; j++) want[j] ^= b[i][j];
@@ -746,7 +754,7 @@ export class Peeler {
 
 The degree table uses floating-point maths only once at load, and `Math.floor` of those products is exact in every engine. If LT wins, task 0.11 replaces it with literal integers.
 
-- [ ] **Step 4: Run it.** Expected: 8 tests pass.
+- [ ] **Step 4: Run it.** Expected: 9 tests pass.
 
 ## Task 0.6: Frames
 
@@ -754,7 +762,7 @@ The degree table uses floating-point maths only once at load, and `Math.floor` o
 **Depends on:** 0.5
 
 **Files:** Create `public/src/frames.js`, `tests/frames.test.js`.
-**Interfaces:** Produces `crc32`, `makeFrame`, `parseFrame`, `splitBlocks`, `cyclicFrames`, `ltFrames`, `blockCount`, `Collector` (follows each stream's coding), `HEADER`, `CYCLIC`, `LT`.
+**Interfaces:** Produces `crc32`, `makeFrame`, `parseFrame`, `splitBlocks`, `ltFrames`, `blockCount`, `Collector`, `HEADER`, `LT`. LT only: cyclic repeat was dropped after the spike.
 
 - [ ] **Step 1: Write the failing test** in `tests/frames.test.js`
 
@@ -762,7 +770,7 @@ The degree table uses floating-point maths only once at load, and `Math.floor` o
 import test from "node:test";
 import assert from "node:assert/strict";
 import { randomBytes } from "node:crypto";
-import { Collector, HEADER, crc32, cyclicFrames, ltFrames, makeFrame, parseFrame } from "../public/src/frames.js";
+import { Collector, HEADER, crc32, ltFrames, makeFrame, parseFrame } from "../public/src/frames.js";
 
 const frame = () => makeFrame({ streamId: 7, length: 400, blockSize: 300, n: 0 }, new Uint8Array(300));
 
@@ -773,7 +781,12 @@ test("crc32 matches the standard check value", () => {
 
 test("a frame survives a round trip", () => {
   const f = parseFrame(frame());
-  assert.deepEqual([f.streamId, f.length, f.blockSize, f.coding, f.n], [7, 400, 300, 0, 0]);
+  assert.deepEqual([f.streamId, f.length, f.blockSize, f.coding, f.n], [7, 400, 300, 1, 0]);
+});
+
+test("frames with another coding are rejected", () => {
+  const f = makeFrame({ streamId: 7, length: 400, blockSize: 300, coding: 0, n: 0 }, new Uint8Array(300));
+  assert.equal(parseFrame(f), null);
 });
 
 test("corrupt frames are rejected", () => {
@@ -794,7 +807,7 @@ test("headers over the caps are rejected before any block is read", () => {
 });
 
 test("the collector rebuilds a stream with frames lost and shuffled", () => {
-  const stream = randomBytes(5000), gen = cyclicFrames(stream, { streamId: 1, blockSize: 300 });
+  const stream = randomBytes(5000), gen = ltFrames(stream, { streamId: 1, blockSize: 300 });
   const c = new Collector();
   const frames = Array.from({ length: 300 }, () => gen.next().value).sort(() => Math.random() - 0.5);
   for (const f of frames) { if (Math.random() < 0.2) continue; if (c.add(f).done) break; }
@@ -816,8 +829,8 @@ test("the collector rebuilds an LT stream with frames lost", () => {
 test("the collector ignores another stream, then moves to it after a stall", () => {
   let t = 0;
   const c = new Collector({ now: () => t });
-  const a = cyclicFrames(randomBytes(900), { streamId: 1, blockSize: 300 });
-  const b = cyclicFrames(randomBytes(600), { streamId: 2, blockSize: 300 });
+  const a = ltFrames(randomBytes(900), { streamId: 1, blockSize: 300 });
+  const b = ltFrames(randomBytes(600), { streamId: 2, blockSize: 300 });
   c.add(a.next().value);
   c.add(b.next().value);
   assert.deepEqual(c.progress(), { received: 1, total: 3, done: false });
@@ -840,8 +853,7 @@ export const MAX_LENGTH = 4 * 1024 * 1024;
 export const MAX_BLOCKS = 16384;
 export const MIN_BLOCK = 300;
 export const MAX_BLOCK = 1500;
-export const CYCLIC = 0;
-export const LT = 1;
+export const LT = 1; // the only coding (the spike measured it against cyclic repeat)
 
 const TABLE = Uint32Array.from({ length: 256 }, (_, n) => {
   let c = n;
@@ -857,7 +869,7 @@ export function crc32(...parts) {
 
 export const blockCount = (length, blockSize) => Math.ceil(length / blockSize);
 
-export function makeFrame({ streamId, length, blockSize, coding = CYCLIC, n }, block) {
+export function makeFrame({ streamId, length, blockSize, coding = LT, n }, block) {
   const out = new Uint8Array(HEADER + blockSize);
   const v = new DataView(out.buffer);
   v.setUint8(0, 1);
@@ -876,7 +888,7 @@ export function parseFrame(bytes) {
   const v = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
   const version = v.getUint8(0), streamId = v.getUint32(1), length = v.getUint32(5);
   const blockSize = v.getUint16(9), coding = v.getUint8(11), n = v.getUint32(12), crc = v.getUint32(16);
-  if (version !== 1 || coding > LT) return null;
+  if (version !== 1 || coding !== LT) return null;
   if (length < 1 || length > MAX_LENGTH) return null;
   if (blockSize < MIN_BLOCK || blockSize > MAX_BLOCK) return null;
   if (blockCount(length, blockSize) > MAX_BLOCKS) return null;
@@ -896,12 +908,6 @@ export function splitBlocks(stream, blockSize) {
   return blocks;
 }
 
-/** Frames for a stream: an endless cyclic sequence. */
-export function* cyclicFrames(stream, { streamId, blockSize }) {
-  const blocks = splitBlocks(stream, blockSize), length = stream.length;
-  for (let n = 0; ; n++) yield makeFrame({ streamId, length, blockSize, coding: CYCLIC, n }, blocks[n % blocks.length]);
-}
-
 /** Frames for a stream: the blocks, then endless XOR combinations of them. */
 export function* ltFrames(stream, { streamId, blockSize }) {
   const blocks = splitBlocks(stream, blockSize), length = stream.length;
@@ -917,10 +923,7 @@ export class Collector {
   }
   #start(f) {
     const k = blockCount(f.length, f.blockSize);
-    this.stream = {
-      id: f.streamId, length: f.length, blockSize: f.blockSize, k, got: 0, at: this.now(),
-      peel: f.coding === LT ? new Peeler(k, f.streamId) : null, blocks: new Array(k),
-    };
+    this.stream = { id: f.streamId, length: f.length, blockSize: f.blockSize, k, got: 0, at: this.now(), peel: new Peeler(k, f.streamId) };
   }
   add(bytes) {
     const f = parseFrame(bytes);
@@ -931,8 +934,7 @@ export class Collector {
       this.#start(f);
     }
     const s = this.stream, before = s.got;
-    if (s.peel) s.got = s.peel.add(f.n, f.block);
-    else if (!s.blocks[f.n % s.k]) { s.blocks[f.n % s.k] = f.block.slice(); s.got += 1; }
+    s.got = s.peel.add(f.n, f.block);
     if (s.got !== before) s.at = this.now();
     return this.progress();
   }
@@ -942,21 +944,21 @@ export class Collector {
   }
   bytes() {
     const s = this.stream, out = new Uint8Array(s.k * s.blockSize);
-    (s.peel ? s.peel.known : s.blocks).forEach((b, i) => out.set(b, i * s.blockSize));
+    s.peel.known.forEach((b, i) => out.set(b, i * s.blockSize));
     return out.subarray(0, s.length);
   }
 }
 ```
 
-- [ ] **Step 4: Run it.** Expected: 7 tests pass.
+- [ ] **Step 4: Run it.** Expected: 8 tests pass.
 
-## Task 0.7: base45 and QR codec
+## Task 0.7: QR codec
 
 **Risk:** proves real QR images round-trip.
 **Depends on:** 0.4, 0.6
 
-**Files:** Create `public/src/base45.js`, `public/src/qrcodec.js`, `tests/qrcodec.test.js`.
-**Interfaces:** Produces `encode`, `decode` (base45); `toMatrix(bytes, { ec, mode })`, `toRgba(matrix, { scale, quiet })`, `readRgba(image, jsQR, { mode })`.
+**Files:** Create `public/src/qrcodec.js`, `tests/qrcodec.test.js`.
+**Interfaces:** Produces `toMatrix(bytes, { ec })`, `toRgba(matrix, { scale, quiet })`, `readRgba(image, jsQR)`. Byte mode only: base45 was dropped after the spike.
 
 - [ ] **Step 1: Write the failing test** in `tests/qrcodec.test.js`
 
@@ -965,97 +967,38 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { createRequire } from "node:module";
 import { randomBytes } from "node:crypto";
-import { Collector, cyclicFrames } from "../public/src/frames.js";
-import { decode, encode } from "../public/src/base45.js";
+import { Collector, ltFrames } from "../public/src/frames.js";
 import { readRgba, toMatrix, toRgba } from "../public/src/qrcodec.js";
 
 const jsQR = createRequire(import.meta.url)("../public/vendor/jsQR.js");
 
-test("base45 matches RFC 9285", () => {
-  const text = s => new TextEncoder().encode(s);
-  assert.equal(encode(text("AB")), "BB8");
-  assert.equal(encode(text("Hello!!")), "%69 VD92EX0");
-  assert.deepEqual(decode("BB8"), text("AB"));
-  assert.throws(() => decode("~~~"));
+test("a stream crosses real QR images with 20% of frames lost", () => {
+  const stream = randomBytes(5000), gen = ltFrames(stream, { streamId: 42, blockSize: 300 });
+  const c = new Collector();
+  for (let i = 0; i < 400 && !c.progress().done; i++) {
+    const f = gen.next().value;
+    if (Math.random() < 0.2) continue;
+    const got = readRgba(toRgba(toMatrix(f)), jsQR);
+    assert.ok(got, "decoded");
+    c.add(got);
+  }
+  assert.deepEqual(Buffer.from(c.bytes()), stream);
 });
-
-for (const mode of ["byte", "base45"]) {
-  test(`a stream crosses real QR images with 20% of frames lost (${mode})`, () => {
-    const stream = randomBytes(5000), gen = cyclicFrames(stream, { streamId: 42, blockSize: 300 });
-    const c = new Collector();
-    for (let i = 0; i < 400 && !c.progress().done; i++) {
-      const f = gen.next().value;
-      if (Math.random() < 0.2) continue;
-      const got = readRgba(toRgba(toMatrix(f, { mode })), jsQR, { mode });
-      assert.ok(got, "decoded");
-      c.add(got);
-    }
-    assert.deepEqual(Buffer.from(c.bytes()), stream);
-  });
-}
 ```
 
 - [ ] **Step 2: Run it.** `node --test tests/qrcodec.test.js`. Expected: FAIL.
 
-- [ ] **Step 3: Write `public/src/base45.js`**
-
-```js
-// RFC 9285 base45, for alphanumeric-mode QR codes.
-const ALPHABET = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ $%*+-./:";
-const VALUE = new Map([...ALPHABET].map((c, i) => [c, i]));
-
-export function encode(bytes) {
-  let out = "";
-  for (let i = 0; i < bytes.length; i += 2) {
-    if (i + 1 < bytes.length) {
-      let n = bytes[i] * 256 + bytes[i + 1];
-      const c = n % 45; n = (n - c) / 45;
-      const d = n % 45; n = (n - d) / 45;
-      out += ALPHABET[c] + ALPHABET[d] + ALPHABET[n];
-    } else {
-      const n = bytes[i], c = n % 45;
-      out += ALPHABET[c] + ALPHABET[(n - c) / 45];
-    }
-  }
-  return out;
-}
-
-export function decode(text) {
-  const out = new Uint8Array(Math.floor(text.length / 3) * 2 + (text.length % 3 === 2 ? 1 : 0));
-  let o = 0;
-  for (let i = 0; i < text.length; i += 3) {
-    const c = VALUE.get(text[i]), d = VALUE.get(text[i + 1]);
-    if (c === undefined || d === undefined) throw new Error("bad base45");
-    if (i + 2 < text.length) {
-      const e = VALUE.get(text[i + 2]);
-      if (e === undefined) throw new Error("bad base45");
-      const n = c + d * 45 + e * 2025;
-      if (n > 65535) throw new Error("bad base45");
-      out[o++] = n >> 8;
-      out[o++] = n & 255;
-    } else {
-      const n = c + d * 45;
-      if (n > 255) throw new Error("bad base45");
-      out[o++] = n;
-    }
-  }
-  return out;
-}
-```
-
-- [ ] **Step 4: Write `public/src/qrcodec.js`**
+- [ ] **Step 3: Write `public/src/qrcodec.js`**
 
 ```js
 // Frame bytes ⇄ QR codes. The decoder is passed in, because jsQR loads differently
 // in Node (require) and in the browser (classic script in a worker or page).
 import qrcode from "../vendor/qrcode.mjs";
-import { encode as b45, decode as unb45 } from "./base45.js";
 
 /** @returns {{size:number, dark:(r:number,c:number)=>boolean}} */
-export function toMatrix(bytes, { ec = "L", mode = "byte" } = {}) {
+export function toMatrix(bytes, { ec = "L" } = {}) {
   const q = qrcode(0, ec);
-  if (mode === "base45") q.addData(b45(bytes), "Alphanumeric");
-  else q.addData(String.fromCharCode(...bytes), "Byte");
+  q.addData(String.fromCharCode(...bytes), "Byte");
   q.make();
   return { size: q.getModuleCount(), dark: (r, c) => q.isDark(r, c) };
 }
@@ -1072,14 +1015,14 @@ export function toRgba(m, { scale = 4, quiet = 4 } = {}) {
   return { data, width, height: width };
 }
 
-export function readRgba({ data, width, height }, jsQR, { mode = "byte" } = {}) {
+export function readRgba({ data, width, height }, jsQR) {
   const hit = jsQR(data, width, height, { inversionAttempts: "dontInvert" });
   if (!hit) return null;
-  return mode === "base45" ? unb45(hit.data) : Uint8Array.from(hit.binaryData);
+  return Uint8Array.from(hit.binaryData);
 }
 ```
 
-- [ ] **Step 5: Run all tests.** `npm test`. Expected: 25 pass, 0 fail (21 here plus 4 from task 0.3).
+- [ ] **Step 4: Run all tests.** `npm test`. Expected: 25 pass, 0 fail (21 here plus 4 from task 0.3).
 
 ## Task 0.8: The spike page
 
@@ -1108,10 +1051,8 @@ export function readRgba({ data, width, height }, jsQR, { mode = "byte" } = {}) 
     <label>Block <input id="block" type="number" value="600" step="100"></label>
     <label>FPS <input id="fps" type="number" value="8"></label>
     <label>Level <select id="ec"><option>L</option><option>M</option></select></label>
-    <label>Mode <select id="qrmode"><option>byte</option><option>base45</option></select></label>
-    <label>Coding <select id="coding"><option value="1">LT</option><option value="0">cyclic</option></select></label>
     <label>Scan px <select id="scanpx"><option>640</option><option>480</option><option>800</option><option value="0">full</option></select></label>
-    <label>Decoders <select id="decoders"><option value="2">2 workers</option><option value="1">1 worker</option><option value="3">3 workers</option><option value="0">main thread</option><option value="-1">native (Android)</option></select></label>
+    <label>Decoders <select id="decoders"><option value="2">2 workers</option><option value="1">1 worker</option><option value="3">3 workers</option><option value="0">main thread</option></select></label>
   </div>
   <div id="actions">
     <button id="install" hidden>Install</button>
@@ -1163,7 +1104,7 @@ importScripts("../vendor/jsQR.js");
 self.onmessage = ({ data }) => {
   const start = performance.now();
   const hit = self.jsQR(new Uint8ClampedArray(data.pixels), data.width, data.height, { inversionAttempts: "dontInvert" });
-  self.postMessage({ text: hit?.data, bytes: hit ? Uint8Array.from(hit.binaryData) : null, ms: performance.now() - start });
+  self.postMessage({ bytes: hit ? Uint8Array.from(hit.binaryData) : null, ms: performance.now() - start });
 };
 ```
 
@@ -1195,9 +1136,8 @@ self.addEventListener("fetch", e => {
 
 ```js
 // Throwaway: measures QR transfer and device features on real phones (reference R17).
-import { CYCLIC, LT, blockCount, makeFrame, parseFrame, splitBlocks } from "../src/frames.js";
+import { blockCount, makeFrame, parseFrame, splitBlocks } from "../src/frames.js";
 import { Peeler, encodeBlock } from "../src/lt.js";
-import { decode as unb45 } from "../src/base45.js";
 import { toMatrix } from "../src/qrcodec.js";
 
 const $ = id => document.getElementById(id);
@@ -1209,7 +1149,7 @@ const log = entry => {
 };
 const status = text => { $("status").textContent = text; };
 const installed = matchMedia("(display-mode: standalone)").matches || navigator.standalone === true;
-const VERSION = 8; // shown on the page, so both devices can be checked to run the same build
+const VERSION = 9; // shown on the page, so both devices can be checked to run the same build
 $("mode").textContent = `Spike v${VERSION} · ${installed ? "Installed" : "Browser tab"} · ${navigator.userAgent}`;
 navigator.serviceWorker?.register("sw.js").catch(e => log({ event: "serviceWorker", error: String(e) }));
 
@@ -1231,7 +1171,7 @@ if ($("install")) $("install").onclick = async () => { // absent in a stale cach
 };
 setTimeout(() => { if (!installPrompt && !installed) log({ event: "installable", value: false, after: "60 s" }); }, 60000);
 
-const settings = () => ({ kb: number("kb"), block: number("block"), fps: number("fps"), ec: $("ec").value, mode: $("qrmode").value, coding: number("coding"), decoders: number("decoders"), scanPx: number("scanpx") });
+const settings = () => ({ kb: number("kb"), block: number("block"), fps: number("fps"), ec: $("ec").value, decoders: number("decoders"), scanPx: number("scanpx") });
 let stopper = null;
 const stop = () => { stopper?.(); stopper = null; $("qr").classList.remove("on"); $("video").classList.remove("on"); };
 $("stop").onclick = stop;
@@ -1265,8 +1205,7 @@ $("show").onclick = async () => {
   const started = performance.now();
   const tick = () => {
     if (!running) return;
-    const body = s.coding === LT ? encodeBlock(blocks, streamId, n) : blocks[n % blocks.length];
-    draw(canvas, toMatrix(makeFrame({ streamId, length, blockSize: s.block, coding: s.coding, n }, body), { ec: s.ec, mode: s.mode }));
+    draw(canvas, toMatrix(makeFrame({ streamId, length, blockSize: s.block, n }, encodeBlock(blocks, streamId, n)), { ec: s.ec }));
     n += 1;
     status(`Showing frame ${n}, ${(n / ((performance.now() - started) / 1000)).toFixed(1)} fps`);
     const next = started + n * (1000 / s.fps);
@@ -1281,11 +1220,10 @@ function collector() {
   return f => {
     if (!st || st.id !== f.streamId) {
       const k = blockCount(f.length, f.blockSize);
-      st = { id: f.streamId, k, peel: f.coding === LT ? new Peeler(k, f.streamId) : null, blocks: new Array(k), got: 0, first: performance.now(), ns: new Set(), low: f.n, high: f.n, length: f.length };
+      st = { id: f.streamId, k, peel: new Peeler(k, f.streamId), got: 0, first: performance.now(), ns: new Set(), low: f.n, high: f.n, length: f.length };
     }
     st.ns.add(f.n); st.low = Math.min(st.low, f.n); st.high = Math.max(st.high, f.n);
-    if (st.peel) st.got = st.peel.add(f.n, f.block);
-    else if (!st.blocks[f.n % st.k]) { st.blocks[f.n % st.k] = f.block.slice(); st.got += 1; }
+    st.got = st.peel.add(f.n, f.block);
     return st;
   };
 }
@@ -1298,25 +1236,11 @@ $("scan").onclick = async () => {
   const add = collector(), grab = document.createElement("canvas"), g = grab.getContext("2d", { willReadFrequently: true });
   // Several decoders in parallel, so more camera frames get a decode attempt.
   const pool = Array.from({ length: Math.max(0, s.decoders) }, () => ({ worker: new Worker("decode-worker.js"), busy: false }));
-  // Android Chrome's built-in QR reader. Its text result is safe only for base45 frames.
-  const native = s.decoders < 0 && "BarcodeDetector" in self ? new BarcodeDetector({ formats: ["qr_code"] }) : null;
-  if (s.decoders < 0) log({ event: "native", available: !!native, mode: s.mode });
-  let nativeBusy = false;
   const scanStart = performance.now();
   let running = true, tries = 0, hits = 0, spent = 0, last = null, firstReadMs = null;
-  // The scanner works out each frame's format itself (raw bytes or base45 text), so its own
-  // Mode setting doesn't have to match the phone that shows the codes.
-  const frameOf = (text, bytes) => {
-    const latin1 = text && /^[\u0000-\u00ff]*$/.test(text) ? Uint8Array.from(text, ch => ch.charCodeAt(0)) : null;
-    for (const candidate of [bytes, latin1]) {
-      const f = candidate && parseFrame(candidate);
-      if (f) return f;
-    }
-    try { return text ? parseFrame(unb45(text)) : null; } catch { return null; }
-  };
-  const take = (text, bytes, ms) => {
+  const take = (bytes, ms) => {
     tries += 1; spent += ms;
-    const f = frameOf(text, bytes);
+    const f = bytes && parseFrame(bytes);
     if (!f) return;
     hits += 1;
     firstReadMs ??= performance.now() - scanStart;
@@ -1331,12 +1255,12 @@ $("scan").onclick = async () => {
     }
   };
   for (const slot of pool) {
-    slot.worker.onmessage = ({ data }) => { slot.busy = false; take(data.text, data.bytes, data.ms); };
+    slot.worker.onmessage = ({ data }) => { slot.busy = false; take(data.bytes, data.ms); };
   }
   const loop = () => {
     if (!running) return;
     const slot = pool.find(p => !p.busy);
-    if ((slot || !pool.length) && !nativeBusy && video.videoWidth) {
+    if ((slot || !pool.length) && video.videoWidth) {
       // The centre square, shrunk: jsQR then searches a small picture that is mostly code.
       const vw = video.videoWidth, vh = video.videoHeight, crop = Math.round(Math.min(vw, vh) * 0.8);
       if (s.scanPx) {
@@ -1346,18 +1270,11 @@ $("scan").onclick = async () => {
         grab.width = vw; grab.height = vh;
         g.drawImage(video, 0, 0);
       }
-      const img = native ? null : g.getImageData(0, 0, grab.width, grab.height);
-      if (native) {
-        nativeBusy = true;
-        const start = performance.now();
-        native.detect(grab).then(codes => {
-          nativeBusy = false;
-          take(codes[0]?.rawValue, null, performance.now() - start);
-        }, () => { nativeBusy = false; });
-      } else if (slot) { slot.busy = true; slot.worker.postMessage({ pixels: img.data.buffer, width: img.width, height: img.height }, [img.data.buffer]); }
+      const img = g.getImageData(0, 0, grab.width, grab.height);
+      if (slot) { slot.busy = true; slot.worker.postMessage({ pixels: img.data.buffer, width: img.width, height: img.height }, [img.data.buffer]); }
       else {
         const start = performance.now(), hit = window.jsQR(img.data, img.width, img.height, { inversionAttempts: "dontInvert" });
-        take(hit?.data, hit ? Uint8Array.from(hit.binaryData) : null, performance.now() - start);
+        take(hit ? Uint8Array.from(hit.binaryData) : null, performance.now() - start);
       }
     }
     requestAnimationFrame(loop);
@@ -1466,6 +1383,8 @@ Expected: all four present.
 
 ## Task 0.10: Run the spike on the phones
 
+**Done 2026-11-06** with an Android phone and a Mac (no iPhone available): gate passed provisionally. Results: `docs/specs/spike-results.md`.
+
 **Risk:** this is the gate.
 **Depends on:** 0.9. Needs Alex's iPhone and an Android phone.
 
@@ -1492,6 +1411,8 @@ Expected: all four present.
 - [ ] **Step 7: Decide.** Pass: go to 0.11. Miss: stop and give Alex the numbers. Nothing else gets built until he decides (ADR 0002).
 
 ## Task 0.11: Pin what the spike decided
+
+**Done 2026-11-06:** LT, byte mode and jsQR in 2 workers won. Settings are pinned in reference R8; cyclic coding, base45 and the native reader were removed from the code, the tests and this plan; `picks(1, 1000, 334)` is pinned to `[23, 88]`.
 
 **Depends on:** 0.10 passed
 

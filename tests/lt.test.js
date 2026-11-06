@@ -42,6 +42,14 @@ test("every table rises to the top threshold", async () => {
   }
 });
 
+// Pinned on 2026-11-06 with the tables in public/src/lt-tables.js. If this changes, the wire
+// format changed: phones on the old and new code can no longer read each other.
+const PINNED = [23, 88];
+
+test("picks are pinned for the format", () => {
+  assert.deepEqual(picks(1, 1000, 334), PINNED);
+});
+
 test("large transfers send coded frames from the start", () => {
   const b = blocks(150), got = encodeBlock(b, 9, 3), want = new Uint8Array(64);
   for (const i of picks(9, 3, 150)) for (let j = 0; j < 64; j++) want[j] ^= b[i][j];
