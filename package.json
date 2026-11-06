@@ -4,9 +4,14 @@
   "private": true,
   "type": "module",
   "license": "MIT",
-  "engines": { "node": ">=26" },
+  "engines": {
+    "node": ">=26"
+  },
   "scripts": {
     "test": "node --test \"tests/**/*.test.js\"",
     "privacy": "node scripts/privacy-check.mjs"
+  },
+  "devDependencies": {
+    "fake-indexeddb": "6.2.5"
   }
 }

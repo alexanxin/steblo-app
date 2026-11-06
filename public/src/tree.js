@@ -363,6 +363,41 @@ export function createTree({ device, name = "", records = new Map(), clock, now 
       return d.finish([cx, cy]);
     },
 
+    /**
+     * Link two people who are already in the tree: kind "parent" (a is b's parent) or "partner".
+     * Linking what is already linked changes nothing; a hidden link comes back (story 76).
+     */
+    link(kind, x, y) {
+      if (kind !== "parent" && kind !== "partner") throw fail(`no such link kind: ${kind}`, "invalid", "kind");
+      const a = analysis();
+      const first = requirePerson(a, x, ["visible"], "first person");
+      const second = requirePerson(a, y, ["visible"], "second person");
+      if (first.id === second.id) throw fail("a person can't be linked to themselves", "invalid");
+      const parentId = first.id;
+      const childId = second.id;
+      const key = kind === "parent" ? `p:${parentId}:${childId}` : parentId < childId ? `u:${parentId}:${childId}` : `u:${childId}:${parentId}`;
+      const existing = a.links.get(key);
+      if (existing && !existing.deleted) return nothing();
+      if (kind === "parent") {
+        const live = a.liveLinks();
+        if ((live.parentsOf.get(childId)?.length ?? 0) >= 2) throw fail("that person already has two parents", "state");
+        // the new parent must not be the child's own descendant: walk up from the new parent
+        const seen = new Set();
+        const todo = [parentId];
+        while (todo.length) {
+          const id = todo.pop();
+          if (id === childId) throw fail("that would make a person their own ancestor", "state");
+          if (seen.has(id)) continue;
+          seen.add(id);
+          todo.push(...(live.parentsOf.get(id) ?? []));
+        }
+      }
+      const d = draft(existing ? "restore" : "add");
+      if (existing) for (const rid of existing.ids) d.edit(rid, "del", false, existing.f.del);
+      else d.create(linkId(kind, parentId, childId), { del: false });
+      return d.finish([parentId, childId]);
+    },
+
     /** Say two person records are one human. The merge record carries a pair of canonical IDs. */
     merge(x, y, choices = {}, { session } = {}) {
       const f = checked("person", choices, PERSON_FIELDS);

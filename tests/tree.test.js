@@ -408,3 +408,72 @@ test("createTree wants a device ID and a clock", () => {
   }
   assert.equal(ids.size, 50);
 });
+
+// ---- link: connect two people who are already in the tree (story 76)
+
+test("link makes an existing person a parent", () => {
+  const h = makeTree();
+  const ema = h.add({ g: "Ема" });
+  const danilo = h.add({ g: "Данило" });
+  const change = h.run(h.tree.link("parent", danilo, ema));
+  assert.deepEqual([...change.puts.keys()], [`p:${danilo}:${ema}`]);
+  assert.equal(change.group.action, "add");
+  assert.deepEqual(change.group.changes, [{ r: `p:${danilo}:${ema}`, created: true }]);
+  const view = h.tree.view();
+  assert.deepEqual(view.parentLinks.map(l => [l.parent, l.child]), [[danilo, ema]]);
+  assert.deepEqual(view.families.map(f => f.children), [[ema]]);
+  // a deleted link comes back instead of a second record being made
+  h.run(h.tree.unlink("parent", danilo, ema));
+  assert.equal(h.tree.view().parentLinks.length, 0);
+  const again = h.run(h.tree.link("parent", danilo, ema));
+  assert.equal(again.puts.size, 1);
+  assert.equal(h.tree.view().parentLinks.length, 1);
+});
+
+test("link makes two existing people partners", () => {
+  const h = makeTree();
+  const miro = h.add({ g: "Миро" });
+  const lea = h.add({ g: "Леа" });
+  const change = h.run(h.tree.link("partner", lea, miro));
+  assert.deepEqual([...change.puts.keys()], [`u:${[miro, lea].sort().join(":")}`]);
+  const view = h.tree.view();
+  assert.equal(view.partnerLinks.length, 1);
+  assert.deepEqual([...view.families[0].partners].sort(), [miro, lea].sort());
+});
+
+test("linking a third parent throws", () => {
+  const h = makeTree();
+  const child = h.add({ g: "Адам" });
+  const a = h.addRel(child, "parent", { g: "Данило" });
+  const b = h.addRel(child, "parent", { g: "Теодора" });
+  const c = h.add({ g: "Леа" });
+  assert.ok(a && b);
+  assert.throws(() => h.tree.link("parent", c, child), err => err.code === "state" && /parent/i.test(err.message));
+});
+
+test("a link that would make someone their own ancestor throws", () => {
+  const h = makeTree();
+  const grand = h.add({ g: "Ѓеко" });
+  const mid = h.addRel(grand, "child", { g: "Данило" });
+  const kid = h.addRel(mid, "child", { g: "Миро" });
+  assert.throws(() => h.tree.link("parent", kid, grand), err => err.code === "state");
+  assert.throws(() => h.tree.link("parent", grand, grand), err => err.code === "invalid" || err.code === "state");
+  assert.throws(() => h.tree.link("parent", kid, mid), err => err.code === "state");
+  assert.throws(() => h.tree.link("friend", kid, mid), err => err.code === "invalid");
+  // the other direction is fine: a grandparent can be linked to a grandchild
+  assert.doesNotThrow(() => h.tree.link("parent", grand, kid));
+});
+
+test("linking an existing link changes nothing", () => {
+  const h = makeTree();
+  const a = h.add({ g: "Данило" });
+  const b = h.addRel(a, "child", { g: "Ема" });
+  const before = h.tree.records().size;
+  const same = h.tree.link("parent", a, b);
+  assert.equal(same.puts.size, 0);
+  assert.equal(same.group, null);
+  const p = h.addRel(a, "partner", { g: "Теодора" });
+  const partner = h.tree.link("partner", p, a);
+  assert.equal(partner.puts.size, 0);
+  assert.equal(h.tree.records().size, before + 2);
+});

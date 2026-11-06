@@ -1,0 +1,140 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Steblo</title>
+  <meta name="theme-color" content="#0e141a">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Steblo">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <link rel="stylesheet" href="motion.css">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main id="canvas" class="canvas" data-i18n-label="app.tree">
+    <!-- the ruler sits under the drawing so cards cover its labels -->
+    <div id="ruler" class="ruler" aria-hidden="true"></div>
+    <svg id="svg" class="world-svg" role="img" data-i18n-label="app.tree">
+      <defs>
+        <filter id="glow" x="-100%" y="-100%" width="300%" height="300%">
+          <feGaussianBlur stdDeviation="3" result="blur"/>
+          <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+        </filter>
+      </defs>
+      <g id="world"></g>
+    </svg>
+    <div id="tags" class="tags"></div>
+  </main>
+
+  <header class="top" id="top" hidden>
+    <div class="pill cluster">
+      <span class="brand-mark" aria-hidden="true">
+        <svg viewBox="0 0 24 24"><path d="M12 21v-7m0 0-5-4m5 4 5-4M7 10V6m10 4V6"/></svg>
+      </span>
+      <span class="brand-name">STEBLO</span>
+      <span class="divider" aria-hidden="true"></span>
+      <button class="mini" id="btn-back" type="button">
+        <svg viewBox="0 0 24 24"><path d="M15 18l-6-6 6-6"/></svg><span data-i18n="nav.back"></span>
+      </button>
+      <button class="mini" id="btn-fwd" type="button">
+        <svg viewBox="0 0 24 24"><path d="M9 18l6-6-6-6"/></svg><span data-i18n="nav.forward"></span>
+      </button>
+      <button class="mini" id="btn-home" type="button">
+        <svg viewBox="0 0 24 24"><path d="M4 11l8-7 8 7v9h-5v-6H9v6H4z"/></svg><span data-i18n="nav.home"></span>
+      </button>
+      <button class="mini" id="btn-menu" type="button">
+        <svg viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16"/></svg><span data-i18n="nav.menu"></span>
+        <b class="badge" id="menu-badge" hidden></b>
+      </button>
+    </div>
+
+    <div class="center">
+      <nav class="dock" data-i18n-label="nav.views">
+        <button class="tile" data-mode="all" type="button" data-i18n-tip="mode.all" data-i18n-label="mode.all">
+          <svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>
+        </button>
+        <span class="dock-sep" aria-hidden="true"></span>
+        <button class="tile" data-mode="both" type="button" data-i18n-tip="mode.both" data-i18n-label="mode.both">
+          <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="2.5"/><circle cx="7" cy="4.5" r="1.8"/><circle cx="17" cy="4.5" r="1.8"/><circle cx="12" cy="19.5" r="1.8"/><path d="M7 6.3 10.4 10.4M17 6.3 13.6 10.4M12 14.5v3.2"/></svg>
+        </button>
+        <button class="tile" data-mode="up" type="button" data-i18n-tip="mode.up" data-i18n-label="mode.up">
+          <svg viewBox="0 0 24 24"><circle cx="12" cy="18" r="2.5"/><circle cx="6" cy="6" r="2"/><circle cx="18" cy="6" r="2"/><path d="M6 8v3h12V8M12 11v4.5"/></svg>
+        </button>
+        <button class="tile" data-mode="down" type="button" data-i18n-tip="mode.down" data-i18n-label="mode.down">
+          <svg viewBox="0 0 24 24"><circle cx="12" cy="6" r="2.5"/><circle cx="6" cy="18" r="2"/><circle cx="18" cy="18" r="2"/><path d="M12 8.5V13M6 16v-3h12v3"/></svg>
+        </button>
+        <span class="dock-sep" aria-hidden="true"></span>
+        <button class="tile" id="btn-fit" type="button" data-i18n-tip="mode.fit" data-i18n-label="mode.fit">
+          <svg viewBox="0 0 24 24"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg>
+        </button>
+      </nav>
+      <div class="params">
+        <div class="param depth">
+          <span class="param-label" data-i18n="depth.up"></span>
+          <button class="step" data-step="up" data-delta="-1" type="button" data-i18n-label="depth.upLess">−</button>
+          <output id="val-up" class="param-val">3</output>
+          <button class="step" data-step="up" data-delta="1" type="button" data-i18n-label="depth.upMore">+</button>
+        </div>
+        <div class="param depth">
+          <span class="param-label" data-i18n="depth.down"></span>
+          <button class="step" data-step="down" data-delta="-1" type="button" data-i18n-label="depth.downLess">−</button>
+          <output id="val-down" class="param-val">2</output>
+          <button class="step" data-step="down" data-delta="1" type="button" data-i18n-label="depth.downMore">+</button>
+        </div>
+        <div class="t-tabs" role="tablist" data-i18n-label="settings.latin">
+          <span class="t-tabs-pill" aria-hidden="true"></span>
+          <button class="t-tab" role="tab" data-latin="0" type="button">АБВ</button>
+          <button class="t-tab" role="tab" data-latin="1" type="button">ABC</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="search-wrap">
+      <label class="pill search">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4.5 4.5"/></svg>
+        <input id="search" type="search" autocomplete="off" spellcheck="false" data-i18n-ph="search.placeholder" data-i18n-label="search.placeholder" aria-controls="results">
+        <kbd>/</kbd>
+      </label>
+      <div id="results" class="results t-dropdown" data-origin="top-right" role="listbox"></div>
+    </div>
+  </header>
+
+  <aside id="panel" class="panel" hidden data-i18n-label="panel.title">
+    <div class="panel-head">
+      <span class="panel-title" data-i18n="panel.title"></span>
+      <button id="btn-panel" class="chev" type="button" aria-expanded="true" data-i18n-label="panel.collapse">
+        <svg viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg>
+      </button>
+    </div>
+    <div id="panel-body" class="panel-body"></div>
+  </aside>
+
+  <footer class="bottom" id="bottom" hidden>
+    <div class="pill status" id="status" aria-live="polite"></div>
+  </footer>
+
+  <div id="banner" class="banner" role="status" hidden></div>
+
+  <!-- the card menu: click, right-click or long press on a person -->
+  <div id="ctx" class="ctx t-dropdown" data-origin="top-left" role="menu"></div>
+
+  <!-- forms and screens -->
+  <div id="sheet" class="sheet" hidden>
+    <div class="sheet-back" id="sheet-back"></div>
+    <section class="sheet-card" id="sheet-card" role="dialog" aria-modal="true">
+      <header class="sheet-head"><h1 id="sheet-title"></h1><button id="sheet-close" class="chev" type="button" data-i18n-label="common.close"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg></button></header>
+      <div class="sheet-body" id="sheet-body"></div>
+      <footer class="sheet-foot" id="sheet-foot"></footer>
+    </section>
+  </div>
+
+  <!-- first start, locked and newer screens -->
+  <div id="gate" class="gate" hidden></div>
+
+  <script type="module" src="ui/app.js"></script>
+</body>
+</html>
