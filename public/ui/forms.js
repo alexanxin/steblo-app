@@ -420,7 +420,12 @@ export function createForms(ctx) {
     closeTimer = setTimeout(() => menuEl.classList.remove("is-closing"), 150);
   }
   window.addEventListener("resize", closeMenu);
-  document.addEventListener("click", e => { if (menu && !e.target.closest("#ctx") && !e.target.closest(".card") && !e.target.closest("#panel")) closeMenu(); });
+  // The event path, not e.target.closest(): a menu item that opens a submenu is gone from the
+  // page by the time the click reaches the document, and would look like a click outside.
+  document.addEventListener("click", e => {
+    const inside = e.composedPath().some(n => n === menuEl || n.id === "panel" || n.classList?.contains("card"));
+    if (menu && !inside) closeMenu();
+  });
 
   return { openMenu, closeMenu, editPerson, addRelative, addFirst, editPartnership, pickPerson, linkExisting, sameAs, confirmDelete, confirmErase, field, btn, text, select, errorLine, showError };
 }
