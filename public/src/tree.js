@@ -124,6 +124,9 @@ function buildView(a) {
   return { people, deleted, merged, parentLinks, partnerLinks, families, notSame: a.notSamePairs, attention: { manyParents, loops, partlyErased, separate } };
 }
 
+/** A visible person with no fields set besides `del`. */
+const isPlaceholder = set => PERSON_FIELDS.every(key => set.f[key] === undefined || set.f[key][0] === null);
+
 const nonNull = fields => Object.fromEntries(Object.entries(fields).filter(([, v]) => v !== null));
 const sameValue = (a, b) => canonicalJson(a ?? null) === canonicalJson(b ?? null);
 const unique = list => [...new Set(list)];
@@ -218,6 +221,59 @@ export function createTree({ device, name = "", records = new Map(), clock, now 
     return d.finish([]);
   }
 
+  /** True if `ancestor` is `id` or one of the people above `id`. */
+  function isAncestorOrSelf(live, ancestor, id) {
+    const seen = new Set();
+    const todo = [id];
+    while (todo.length) {
+      const next = todo.pop();
+      if (next === ancestor) return true;
+      if (seen.has(next)) continue;
+      seen.add(next);
+      todo.push(...(live.parentsOf.get(next) ?? []));
+    }
+    return false;
+  }
+
+  /**
+   * Brothers and sisters share parents. The one with parents hands them to the one without;
+   * with none on either side, one nameless parent stands in for both; with parents on both sides
+   * nothing is guessed and the link is refused (the parents may be the same people: merge them).
+   */
+  function linkSiblings(x, y) {
+    const a = analysis();
+    const first = requirePerson(a, x, ["visible"], "first person");
+    const second = requirePerson(a, y, ["visible"], "second person");
+    if (first.id === second.id) throw fail("a person can't be linked to themselves", "invalid");
+    const live = a.liveLinks();
+    const firstParents = live.parentsOf.get(first.id) ?? [];
+    const secondParents = live.parentsOf.get(second.id) ?? [];
+    if (firstParents.length > 0 && secondParents.length > 0) throw fail("they already have parents", "refused");
+
+    const d = draft("add");
+    const make = (parent, child) => {
+      const id = linkId("parent", parent, child);
+      const existing = a.links.get(id);
+      if (existing && !existing.deleted) return;
+      if (existing) for (const rid of existing.ids) d.edit(rid, "del", false, existing.f.del);
+      else d.create(id, { del: false });
+    };
+    const people = [first.id, second.id];
+    if (firstParents.length === 0 && secondParents.length === 0) {
+      const placeholder = freshId();
+      d.create(placeholder, { del: false });
+      make(placeholder, first.id);
+      make(placeholder, second.id);
+      people.push(placeholder);
+    } else {
+      const [parents, child] = firstParents.length > 0 ? [firstParents, second.id] : [secondParents, first.id];
+      const given = parents.slice(0, 2);
+      for (const parent of given) if (isAncestorOrSelf(live, child, parent)) throw fail("that would make a person their own ancestor", "state");
+      for (const parent of given) { make(parent, child); people.push(parent); }
+    }
+    return d.finish(people);
+  }
+
   const tree = {
     get device() { return device; },
     get name() { return deviceName; },
@@ -263,7 +319,18 @@ export function createTree({ device, name = "", records = new Map(), clock, now 
         other = requirePerson(a, otherParent, ["visible"], "otherParent");
         if (other.id === target.id) throw fail("otherParent must be someone else", "invalid", "otherParent");
       }
-      if (relation === "parent" && parents.length >= 2) throw fail("that person already has two parents", "state");
+      if (relation === "parent") {
+        // A nameless parent made by "sibling" is waiting to be filled in: write the fields onto it, so every child of it shares the new parent.
+        const placeholder = parents.map(pid => a.setOf(pid)).find(set => set?.state === "visible" && isPlaceholder(set));
+        if (placeholder) {
+          const keys = Object.keys(f).filter(key => f[key] !== null);
+          if (keys.length === 0) return nothing();
+          const d = draft("add");
+          for (const key of keys) d.edit(placeholder.id, key, f[key], placeholder.f[key]);
+          return d.finish([placeholder.id, target.id]);
+        }
+        if (parents.length >= 2) throw fail("that person already has two parents", "state");
+      }
 
       const d = draft("add");
       const taken = new Set();
@@ -273,8 +340,19 @@ export function createTree({ device, name = "", records = new Map(), clock, now 
       const people = [newOne, target.id];
       const link = (kind, x, y) => d.create(linkId(kind, x, y), { del: false });
 
-      if (relation === "parent") link("parent", newOne, target.id);
-      else if (relation === "child") {
+      if (relation === "parent") {
+        link("parent", newOne, target.id);
+        // A second parent also goes to the brothers and sisters who have only the first one (Alex's call, 2026-11-08).
+        if (parents.length === 1) {
+          const live = a.liveLinks();
+          for (const [child, its] of live.parentsOf) {
+            if (child === target.id || its.length !== 1 || its[0] !== parents[0]) continue;
+            if (a.setOf(child)?.state !== "visible") continue;
+            link("parent", newOne, child);
+            people.push(child);
+          }
+        }
+      } else if (relation === "child") {
         link("parent", target.id, newOne);
         if (other) { link("parent", other.id, newOne); people.push(other.id); }
       } else if (relation === "partner") link("partner", target.id, newOne);
@@ -368,6 +446,7 @@ export function createTree({ device, name = "", records = new Map(), clock, now 
      * Linking what is already linked changes nothing; a hidden link comes back (story 76).
      */
     link(kind, x, y) {
+      if (kind === "sibling") return linkSiblings(x, y);
       if (kind !== "parent" && kind !== "partner") throw fail(`no such link kind: ${kind}`, "invalid", "kind");
       const a = analysis();
       const first = requirePerson(a, x, ["visible"], "first person");

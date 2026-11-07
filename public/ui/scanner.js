@@ -29,9 +29,34 @@ export function cameraFailure(err) {
 }
 
 /**
+ * Ask the camera for continuous focus where it can, and report the zoom range where it has one.
+ * A camera that lacks a setting, or has no capabilities API (Safari, older Chrome), is left as it is: no errors.
+ * → { zoom: { min, max, step, value } | null, setZoom(value) }
+ */
+export function tuneCamera(track) {
+  let caps = {};
+  try { caps = track?.getCapabilities?.() ?? {}; } catch { caps = {}; }
+  const apply = advanced => {
+    try { Promise.resolve(track.applyConstraints({ advanced: [advanced] })).catch(() => {}); } catch { /* unsupported: ignore */ }
+  };
+  if (Array.isArray(caps.focusMode) && caps.focusMode.includes("continuous")) apply({ focusMode: "continuous" });
+  const z = caps.zoom;
+  const usable = z && typeof z.min === "number" && typeof z.max === "number" && z.max > z.min;
+  let value = 1;
+  if (usable) {
+    try { const current = track.getSettings?.().zoom; if (typeof current === "number") value = current; } catch { /* keep the default */ }
+    value = Math.min(z.max, Math.max(z.min, value));
+  }
+  return {
+    zoom: usable ? { min: z.min, max: z.max, step: z.step > 0 ? z.step : (z.max - z.min) / 20, value } : null,
+    setZoom: v => apply({ zoom: v }),
+  };
+}
+
+/**
  * Start the camera in `video` and read frames until one stream is whole.
  * `onProgress({ received, total, distinct, q, samples })` runs on every new frame; `onDone(bytes)` once, at the end.
- * → { stop(), stats() }. Rejects with { code: "denied" | "nocamera" | "failed" } if the camera won't start.
+ * → { stop(), stats(), zoom, setZoom(value) }; `zoom` is null where the camera can't zoom. Rejects with { code: "denied" | "nocamera" | "failed" } if the camera won't start.
  */
 export async function startScanner({ video, onProgress, onDone }) {
   if (!navigator.mediaDevices?.getUserMedia) throw Object.assign(new Error("no camera API"), { code: "nocamera" });
@@ -41,6 +66,7 @@ export async function startScanner({ video, onProgress, onDone }) {
   } catch (err) {
     throw Object.assign(new Error(String(err?.message || err)), { code: cameraFailure(err) });
   }
+  const tuned = tuneCamera(media.getVideoTracks?.()[0]);
   video.srcObject = media;
   video.muted = true;
   video.setAttribute("playsinline", "");
@@ -118,5 +144,5 @@ export async function startScanner({ video, onProgress, onDone }) {
     requestAnimationFrame(loop);
   };
   loop();
-  return { stop, stats };
+  return { stop, stats, zoom: tuned.zoom, setZoom: tuned.setZoom };
 }

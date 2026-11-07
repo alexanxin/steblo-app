@@ -61,6 +61,7 @@
   "error.generic": "Something went wrong.",
   "error.invalid": "Something you entered isn't allowed. Check the fields.",
   "error.missing": "That person isn't in the tree.",
+  "error.refused": "They already have parents. If those are the same people, use Same person as… on the parents.",
   "error.state": "That isn't possible in this tree.",
   "form.add.child": "Add a child of {name}",
   "form.add.parent": "Add a parent of {name}",
@@ -175,11 +176,13 @@
   "link.asChild": "A child of this person…",
   "link.asParent": "A parent of this person…",
   "link.asPartner": "A partner of this person…",
+  "link.asSibling": "A brother or sister of this person…",
   "link.cannot": "not possible",
   "link.done": "Linked {a} and {b}.",
   "link.pick.child": "Who is a child of {name}?",
   "link.pick.parent": "Who is a parent of {name}?",
   "link.pick.partner": "Who is a partner of {name}?",
+  "link.pick.sibling": "Who is a brother or sister of {name}?",
   "link.self": "that is the same person",
   "marriage.date": "Marriage date",
   "marriage.endDate": "Date of separation",
@@ -353,6 +356,7 @@
   "sync.finish": "Finish",
   "sync.finishedNote": "Sync finished.",
   "sync.gotIt": "Got it ✓",
+  "sync.holdBack": "Hold the phone a little further back if the code looks blurry.",
   "sync.joinGo": "Join the trees",
   "sync.joinNext": "Some people may be in both trees. Next you can tell Steblo who is the same.",
   "sync.joinNextB": "Some new people aren't connected to your tree. You can join them now.",
@@ -384,5 +388,6 @@
   "sync.unreadable": "The code could not be read. Start the sync again.",
   "sync.update": "Update the app: open it once while online.",
   "sync.waitingForCode": "Waiting for a code…",
-  "sync.working": "Working…"
+  "sync.working": "Working…",
+  "sync.zoom": "Zoom"
 }

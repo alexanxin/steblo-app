@@ -477,3 +477,166 @@ test("linking an existing link changes nothing", () => {
   assert.equal(partner.puts.size, 0);
   assert.equal(h.tree.records().size, before + 2);
 });
+
+// ---- adding a parent fills a placeholder parent
+
+test("adding a parent fills a placeholder parent, so siblings share it", () => {
+  const h = makeTree();
+  const danilo = h.add({ g: "Данило" });
+  const miro = h.addRel(danilo, "sibling", { g: "Миро" });
+  const placeholder = h.tree.view().parentLinks.find(l => l.child === danilo).parent;
+  const before = h.tree.records().size;
+  const change = h.run(h.tree.addRelative(danilo, "parent", { g: "Теодора", sx: "F" }));
+  assert.deepEqual([...change.puts.keys()], [placeholder]);
+  assert.equal(h.tree.records().size, before);
+  assert.equal(h.value(placeholder, "g"), "Теодора");
+  const view = h.tree.view();
+  assert.equal(view.parentLinks.length, 2);
+  const family = view.families.find(f => f.children.includes(danilo));
+  assert.deepEqual([...family.children].sort(), [danilo, miro].sort());
+  assert.ok(family.partners.includes(placeholder));
+});
+
+test("undo of filling a placeholder empties it again", () => {
+  const h = makeTree();
+  const danilo = h.add({ g: "Данило" });
+  h.addRel(danilo, "sibling", { g: "Миро" });
+  const placeholder = h.tree.view().parentLinks.find(l => l.child === danilo).parent;
+  const change = h.run(h.tree.addRelative(danilo, "parent", { g: "Теодора", sx: "F" }));
+  assert.equal(change.group.action, "add");
+  const undo = h.run(h.tree.undo(change.group));
+  assert.equal(undo.skipped, 0);
+  assert.equal(h.tree.view().people.get(placeholder).f.g, undefined);
+  assert.equal(h.tree.view().people.get(placeholder).f.sx, undefined);
+  assert.equal(h.tree.view().people.has(placeholder), true);
+});
+
+test("a parent is still created when there is no placeholder", () => {
+  const h = makeTree();
+  const danilo = h.add({ g: "Данило" });
+  const named = h.addRel(danilo, "parent", { g: "Миро" });
+  assert.notEqual(named, danilo);
+  assert.equal(h.tree.records().size, 3);
+  // a named parent is not a placeholder: a second parent is a new person
+  const second = h.addRel(danilo, "parent", { g: "Теодора" });
+  assert.equal(h.tree.records().size, 5);
+  assert.notEqual(second, named);
+});
+
+test("with several placeholders, the one with the smallest ID is filled", () => {
+  const h = makeTree();
+  const danilo = h.add({ g: "Данило" });
+  h.addRel(danilo, "sibling", { g: "Миро" });
+  const ema = h.add({ g: "Ема" });
+  h.addRel(ema, "sibling", { g: "Леа" });
+  const links = h.tree.view().parentLinks;
+  const ph1 = links.find(l => l.child === danilo).parent;
+  const ph2 = links.find(l => l.child === ema).parent;
+  h.run(h.tree.link("parent", ph2, danilo));
+  const [low, high] = [ph1, ph2].sort();
+  const change = h.run(h.tree.addRelative(danilo, "parent", { g: "Теодора" }));
+  assert.deepEqual([...change.puts.keys()], [low]);
+  assert.equal(h.value(high, "g"), undefined);
+});
+
+// ---- link a sibling
+
+const parentsOfIn = (h, id) => h.tree.view().parentLinks.filter(l => l.child === id).map(l => l.parent).sort();
+
+test("link sibling: the one without parents gets the other's parents", () => {
+  const h = makeTree();
+  const adam = h.add({ g: "Адам" });
+  const mum = h.addRel(adam, "parent", { g: "Теодора" });
+  const dad = h.addRel(adam, "parent", { g: "Данило" });
+  const ema = h.add({ g: "Ема" });
+  const change = h.run(h.tree.link("sibling", adam, ema));
+  assert.equal(change.group.action, "add");
+  assert.deepEqual(parentsOfIn(h, ema), [mum, dad].sort());
+  // the reverse: b has parents, a has none
+  const lea = h.add({ g: "Леа" });
+  h.run(h.tree.link("sibling", lea, adam));
+  assert.deepEqual(parentsOfIn(h, lea), [mum, dad].sort());
+  assert.equal(h.tree.view().families.filter(f => f.children.includes(lea)).length, 1);
+});
+
+test("link sibling with no parents on either side makes one placeholder parent", () => {
+  const h = makeTree();
+  const a = h.add({ g: "Адам" });
+  const b = h.add({ g: "Ема" });
+  const change = h.run(h.tree.link("sibling", a, b));
+  const placeholder = [...change.puts.keys()].find(k => !k.includes(":") && k !== a && k !== b);
+  assert.deepEqual(Object.keys(change.puts.get(placeholder).f), ["del"]);
+  assert.deepEqual(parentsOfIn(h, a), [placeholder]);
+  assert.deepEqual(parentsOfIn(h, b), [placeholder]);
+});
+
+test("link sibling is refused when both have parents", () => {
+  const h = makeTree();
+  const a = h.add({ g: "Адам" });
+  const b = h.add({ g: "Ема" });
+  h.addRel(a, "parent", { g: "Данило" });
+  h.addRel(b, "parent", { g: "Теодора" });
+  assert.throws(() => h.tree.link("sibling", a, b), err => err.code === "refused");
+});
+
+test("link sibling refuses oneself and loops, and never gives a third parent", () => {
+  const h = makeTree();
+  const a = h.add({ g: "Адам" });
+  assert.throws(() => h.tree.link("sibling", a, a), err => err.code === "invalid");
+  assert.throws(() => h.tree.link("sibling", a, pid("f", 9)), err => err.code === "missing");
+  // b is a's parent; a has parents (b), b has none: b would get itself as a parent
+  const b = h.addRel(a, "parent", { g: "Данило" });
+  assert.throws(() => h.tree.link("sibling", a, b), err => err.code === "state");
+  // a grandparent can't become a sibling of the grandchild
+  const c = h.addRel(b, "parent", { g: "Миро" });
+  assert.throws(() => h.tree.link("sibling", a, c), err => err.code === "state");
+  // two parents are handed over, never more
+  const x = h.add({ g: "Лea" });
+  const y = h.addRel(a, "parent", { g: "Теодора" });
+  h.run(h.tree.link("sibling", a, x));
+  assert.deepEqual(parentsOfIn(h, x), [b, y].sort());
+});
+
+test("link sibling brings back a hidden parent link", () => {
+  const h = makeTree();
+  const a = h.add({ g: "Адам" });
+  const mum = h.addRel(a, "parent", { g: "Теодора" });
+  const e = h.add({ g: "Ема" });
+  h.run(h.tree.link("parent", mum, e));
+  h.run(h.tree.unlink("parent", mum, e));
+  const change = h.run(h.tree.link("sibling", a, e));
+  assert.deepEqual([...change.puts.keys()], [`p:${mum}:${e}`]);
+  assert.deepEqual(parentsOfIn(h, e), [mum]);
+});
+
+test("a second parent is also given to brothers and sisters who share the first one", () => {
+  const h = makeTree();
+  const danilo = h.add({ g: "Данило" });
+  const miro = h.addRel(danilo, "sibling", { g: "Миро" });
+  const mother = h.tree.view().parentLinks.find(l => l.child === danilo).parent;
+  h.run(h.tree.addRelative(danilo, "parent", { g: "Теодора", sx: "F" })); // fills the placeholder
+  const change = h.tree.addRelative(danilo, "parent", { g: "Адам", sx: "M" });
+  const father = newPeople(h, change)[0];
+  h.run(change);
+  const view = h.tree.view();
+  const family = view.families.find(f => f.children.includes(danilo));
+  assert.deepEqual([...family.children].sort(), [danilo, miro].sort());
+  assert.deepEqual([...family.partners].sort(), [mother, father].sort());
+  // one change: undo takes the father off both
+  h.run(h.tree.undo(change.group));
+  assert.equal(h.tree.view().parentLinks.filter(l => l.parent === father).length, 0);
+});
+
+test("a second parent skips a half-sibling who already has two parents", () => {
+  const h = makeTree();
+  const danilo = h.add({ g: "Данило" });
+  const mother = h.addRel(danilo, "parent", { g: "Теодора", sx: "F" });
+  const miro = h.add({ g: "Миро", sx: "M" });
+  const lea = h.addRel(mother, "child", { g: "Леа" }, { otherParent: miro });
+  const ema = h.addRel(mother, "child", { g: "Ема" });
+  const adam = h.addRel(danilo, "parent", { g: "Адам", sx: "M" });
+  const parentsOf = child => h.tree.view().parentLinks.filter(l => l.child === child).map(l => l.parent).sort();
+  assert.deepEqual(parentsOf(danilo), [mother, adam].sort());
+  assert.deepEqual(parentsOf(ema), [mother, adam].sort());
+  assert.deepEqual(parentsOf(lea), [mother, miro].sort());
+});

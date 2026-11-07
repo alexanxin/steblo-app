@@ -984,3 +984,6 @@ kbd {
 .join-warnings { margin-bottom: 8px; }
 .join-diff { margin: 8px 0 12px; }
 .join-diff .check { margin: 6px 0 0; }
+
+.sync-zoom { display: flex; align-items: center; gap: 10px; margin-top: 8px; }
+.sync-zoom input[type="range"] { flex: 1; min-width: 0; }

@@ -29,6 +29,7 @@ export function createForms(ctx) {
     if (err?.code === "invalid") return t("error.invalid");
     if (err?.code === "state") return t("error.state");
     if (err?.code === "missing") return t("error.missing");
+    if (err?.code === "refused") return t("error.refused");
     return t("error.generic");
   };
 
@@ -253,23 +254,23 @@ export function createForms(ctx) {
       try {
         if (role === "parent") ctx.tree.link("parent", other, id);
         else if (role === "child") ctx.tree.link("parent", id, other);
-        else ctx.tree.link("partner", id, other);
+        else ctx.tree.link(role, id, other);
         return null;
       } catch (err) {
-        return err.code === "state" ? t("link.cannot") : t("error.invalid");
+        return err.code === "refused" ? t("error.refused") : err.code === "state" ? t("link.cannot") : t("error.invalid");
       }
     };
     const check = other => {
       if (other === id) return t("link.self");
       const reason = dry(other);
       if (reason) return reason;
-      const change = role === "parent" ? ctx.tree.link("parent", other, id) : role === "child" ? ctx.tree.link("parent", id, other) : ctx.tree.link("partner", id, other);
+      const change = role === "parent" ? ctx.tree.link("parent", other, id) : role === "child" ? ctx.tree.link("parent", id, other) : ctx.tree.link(role, id, other);
       return change.puts.size === 0 ? t("link.already") : null;
     };
     const other = await pickPerson({ title: t(`link.pick.${role}`, { name: ctx.name(id) }), check });
     if (!other) return;
     try {
-      const change = role === "parent" ? ctx.tree.link("parent", other, id) : role === "child" ? ctx.tree.link("parent", id, other) : ctx.tree.link("partner", id, other);
+      const change = role === "parent" ? ctx.tree.link("parent", other, id) : role === "child" ? ctx.tree.link("parent", id, other) : ctx.tree.link(role, id, other);
       if (await ctx.act(change)) { ctx.show(id); ctx.notify(t("link.done", { a: ctx.name(other), b: ctx.name(id) })); }
     } catch (err) {
       ctx.notify(errorText(err), { kind: "error" });
@@ -346,7 +347,6 @@ export function createForms(ctx) {
     const rows = [h("div", { class: "ctx-head" }, h("b", null, `${info.given} ${info.surname}`.trim()), info.span ? h("span", null, info.span) : null)];
     const back = () => { menu.page = "main"; renderMenu(); };
     if (page === "main") {
-      const parents = view.parentLinks.filter(l => l.child === id).length;
       rows.push(
         item(t("menu.edit"), () => editPerson(id)),
         item(`${t("menu.addRelative")} ›`, () => { menu.page = "add"; renderMenu(); }),
@@ -360,20 +360,22 @@ export function createForms(ctx) {
         item(t("menu.delete"), () => confirmDelete(id), "danger"),
         item(t("menu.erase"), () => confirmErase(id), "danger"),
       );
-      void parents;
     } else if (page === "add") {
-      const parents = view.parentLinks.filter(l => l.child === id).length;
+      const parentIds = view.parentLinks.filter(l => l.child === id).map(l => l.parent);
+      // two parents block a third, unless one is a nameless placeholder that the new parent will fill
+      const full = parentIds.length >= 2 && !parentIds.some(pid => Object.keys(view.people.get(pid)?.f ?? {}).length === 0);
       rows.push(item(`‹ ${t("common.back")}`, back), h("div", { class: "ctx-sep" }),
         item(t("rel.parent"), () => addRelative(id, "parent")),
         item(t("rel.child"), () => addRelative(id, "child")),
         item(t("rel.partner"), () => addRelative(id, "partner")),
         item(t("rel.sibling"), () => addRelative(id, "sibling")));
-      if (parents >= 2) rows[3].disabled = true;
+      if (full) rows[3].disabled = true;
     } else if (page === "link") {
       rows.push(item(`‹ ${t("common.back")}`, back), h("div", { class: "ctx-sep" }),
         item(t("link.asParent"), () => linkExisting(id, "parent")),
         item(t("link.asChild"), () => linkExisting(id, "child")),
-        item(t("link.asPartner"), () => linkExisting(id, "partner")));
+        item(t("link.asPartner"), () => linkExisting(id, "partner")),
+        item(t("link.asSibling"), () => linkExisting(id, "sibling")));
     }
     menuEl.replaceChildren(...rows);
     place();

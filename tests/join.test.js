@@ -149,8 +149,8 @@ test("one child under two names is possible", () => {
 
 test("a placeholder parent is possible only when each side has one parent of that sex", () => {
   const w = around();
-  const x = w.rel("parent", {}); // a nameless parent
   const y = w.rel("parent", { g: "Теодора", s: "Новакова", sx: "F" });
+  const x = w.rel("parent", {}); // a nameless parent (added second: a first one would be filled by the next parent)
   const incoming = new Set([linkId("parent", x, w.m)]);
   assert.equal(compareCandidates(w.view(), x, y, "parent", { anchor: w.m, incoming }), "possible");
   // without the anchor the side rule can't be checked

@@ -123,9 +123,10 @@ export function createSync(ctx, overlay, join) {
     const bar = h("span", { class: "sync-bar-fill" });
     const status = h("p", { class: "sync-status", "aria-live": "polite" }, t("sync.waitingForCode"));
     const left = h("p", { class: "note" });
+    const zoomBox = h("div", { class: "sync-zoom", hidden: true });
     overlay.show({
       title,
-      body: [h("div", { class: "sync-video-wrap" }, video), h("div", { class: "sync-bar" }, bar), status, left, note(hint)],
+      body: [h("div", { class: "sync-video-wrap" }, video), h("div", { class: "sync-bar" }, bar), status, left, note(hint), note(t("sync.holdBack")), zoomBox],
       onCancel: cancel,
     });
     let scanner = null;
@@ -141,6 +142,12 @@ export function createSync(ctx, overlay, join) {
       scanner = await startScanner({ video, onProgress, onDone: bytes => { if (alive(me)) onDone(bytes); } });
       if (!alive(me)) { scanner.stop(); return; }
       me.stoppers.push(scanner.stop);
+      if (scanner.zoom) {
+        const { min, max, step, value } = scanner.zoom;
+        const slider = h("input", { type: "range", min, max, step, value, "aria-label": t("sync.zoom"), on: { input: () => scanner.setZoom(Number(slider.value)) } });
+        zoomBox.append(h("span", { class: "note" }, t("sync.zoom")), slider);
+        zoomBox.hidden = false;
+      }
       ready?.(scanner);
     } catch (err) {
       if (!alive(me)) return;
