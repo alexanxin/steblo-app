@@ -1,3 +1,5 @@
+// Reads one camera picture with jsQR. Two of these run side by side, so a new picture can be tried
+// while another is being decoded (R8). A classic worker: jsQR is a classic script.
 importScripts("../vendor/jsQR.js");
 self.onmessage = ({ data }) => {
   const start = performance.now();

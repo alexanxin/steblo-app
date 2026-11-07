@@ -88,7 +88,7 @@ export async function runStart(ctx, { storage, begin, setLanguage, screens }) {
         choice(t("start.myself"), t("start.myselfText"), () => chosen(startWithMyself)),
         choice(t("start.gedcom"), t("start.gedcomText"), () => chosen(() => screens.gedcomImport())),
         choice(t("start.restore"), t("start.restoreText"), () => chosen(() => screens.restore())),
-        choice(t("start.scan"), t("start.scanSoon"), () => {}, true)),
+        choice(t("start.scan"), t("start.scanText"), () => chosen(() => ctx.sync.start()))),
       h("button", { class: "gate-btn quiet", type: "button", on: { click: welcome } }, t("common.back")));
   };
 

@@ -14,6 +14,8 @@ const DYNAMIC = {
   "dup.${d.relation}": ["parent", "partner", "child"],
   "form.add.${relation}": ["parent", "child", "partner", "sibling"],
   "history.action.${g.action}": ["add", "edit", "delete", "restore", "merge", "notsame", "erase", "undo", "sync", "import", "restamp"],
+  "join.asks.${q.relation}": ["parent", "partner", "child"],
+  "join.autoRel.${e.relation}": ["parent", "partner", "child"],
   "lang.${v}": ["en", "mk"],
   "link.pick.${role}": ["parent", "child", "partner"],
   "same.reason.${r}": ["sex", "years", "related", "notsame", "same", "missing", "partners", "siblings"],

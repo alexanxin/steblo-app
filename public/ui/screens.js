@@ -51,6 +51,7 @@ export function createScreens(ctx, forms) {
     ctx.openSheet({
       title: t("menu.title"),
       body: h("div", { class: "menu-list" },
+        h("button", { class: "menu-row", type: "button", on: { click: go(() => ctx.sync.start()) } }, h("b", null, t("sync.menu"))),
         h("button", { class: "menu-row", type: "button", on: { click: go(() => forms.addFirst(true)) } }, h("b", null, t("menu.addPerson"))),
         h("button", { class: "menu-row", type: "button", on: { click: go(() => attention()) } }, h("b", null, t("attention.title")), count ? h("span", { class: "badge-inline" }, String(count)) : null),
         h("button", { class: "menu-row", type: "button", on: { click: go(() => history()) } }, h("b", null, t("history.title"))),
@@ -80,10 +81,13 @@ export function createScreens(ctx, forms) {
         btn(t("attention.eraseRest"), async () => { if (await ctx.act(ctx.tree.eraseRest(p.id))) attention(); }, "danger")))));
     }
     if (a.separate.length) {
-      body.push(section(t("attention.separate"), note(t("attention.separateHelp")), ...a.separate.slice(0, 100).map(g => {
-        const first = g.ids[0];
-        return h("div", { class: "list-row" }, h("span", { class: "grow" }, `${ctx.label(first)} · ${t("attention.groupSize", { n: g.size })}`), show(first));
-      })));
+      const joinFrom = groups => () => { ctx.closeSheet(); ctx.join.fromGroups(groups); };
+      body.push(section(t("attention.separate"), note(t("attention.separateHelp")),
+        row(btn(t("join.continue"), joinFrom(a.separate), "primary")),
+        ...a.separate.slice(0, 100).map(g => {
+          const first = g.ids[0];
+          return h("div", { class: "list-row" }, h("span", { class: "grow" }, `${ctx.label(first)} · ${t("attention.groupSize", { n: g.size })}`), show(first), btn(t("join.fromAttention"), joinFrom([g])));
+        })));
     }
     if (body.length === 0) body.push(note(t("attention.none")));
     ctx.openSheet({ title: t("attention.title"), body: h("div", { class: "edit" }, ...body), foot: [btn(t("common.close"), () => ctx.closeSheet())] });
@@ -258,7 +262,7 @@ export function createScreens(ctx, forms) {
         notKept.length ? section(t("gedcom.notKept"), h("p", { class: "note" }, notKept.map(([tag, n]) => `${tag} ${n}`).join(", "))) : null,
         result.newGroups.length ? note(t("gedcom.joinLater")) : null),
       foot: [
-        nothing ? null : btn(t("gedcom.add"), async () => { if (await ctx.act(result.change)) { ctx.closeSheet(); ctx.notify(t("gedcom.done", { n: s.newPeople })); } }, "primary"),
+        nothing ? null : btn(t("gedcom.add"), async () => { if (await ctx.act(result.change)) { ctx.closeSheet(); ctx.notify(t("gedcom.done", { n: s.newPeople })); ctx.join.afterImport(result); } }, "primary"),
         btn(nothing ? t("common.close") : t("common.cancel"), () => ctx.closeSheet()),
       ],
     });

@@ -14,6 +14,9 @@ import { createCanvas } from "./render.js";
 import { createForms } from "./forms.js";
 import { createScreens } from "./screens.js";
 import { runStart } from "./start.js";
+import { createOverlay } from "./overlay.js";
+import { createSync } from "./sync-screens.js";
+import { createJoin } from "./join-screens.js";
 import { h, svg, $, $$, clear } from "./dom.js";
 
 const MAX_DEPTH = 8;
@@ -87,6 +90,9 @@ const ctx = {
   /** The tree is shown for the first time: persistent storage, hash route. */
   askPersistence,
   pref,
+  stage,
+  flushWrites: () => writes,
+  lock,
   attentionCount,
   daysSinceBackup: () => (S.meta.lastBackup ? Math.floor((Date.now() - S.meta.lastBackup) / DAY) : null),
 };
@@ -94,6 +100,10 @@ const forms = createForms(ctx);
 const screens = createScreens(ctx, forms);
 ctx.screens = screens;
 ctx.forms = forms;
+const overlay = createOverlay(ctx);
+ctx.overlay = overlay;
+ctx.join = createJoin(ctx, overlay);
+ctx.sync = createSync(ctx, overlay, ctx.join);
 
 // ---------- messages
 let bannerTimer = 0;
@@ -137,9 +147,18 @@ function saveFailed(err) {
   notify(code === "quota" ? ctx.t("save.quota") : ctx.t("save.failed"), { kind: "error", sticky: true });
 }
 
-/** Commit a pending change, then adopt it and redraw. Resolves to true if it was saved (or there was nothing to save). */
-async function act(change) {
+// While a sync or a join runs, nothing else may write: only its own changes go through (R6 "Editing is locked").
+let locked = false;
+function lock(on) {
+  locked = on;
+  document.body.classList.toggle("is-syncing", on);
+}
+
+/** Commit a pending change, then adopt it and redraw. Resolves to true if it was saved (or there was nothing to save).
+ *  `internal` is for the sync and join screens, which hold the lock themselves. */
+async function act(change, { internal = false } = {}) {
   if (!change) return true;
+  if (locked && !internal) { notify(ctx.t("sync.locked"), { kind: "error" }); return false; }
   const hasMeta = change.meta && Object.keys(change.meta).length > 0;
   if (change.puts.size === 0 && !change.group && !hasMeta) return true;
   try {
@@ -154,6 +173,30 @@ async function act(change) {
   redraw();
   if (S.tree.view().people.size > 0) askPersistence();
   return true;
+}
+
+// The join walk (join.js) reads the tree again right after it hands over a change, so its changes are adopted at once
+// and stored in order behind it. A failed write locks editing (storage does that) and the join stops on the next flush.
+let writes = Promise.resolve(true);
+function stage(change) {
+  if (!change) return writes;
+  const hasMeta = change.meta && Object.keys(change.meta).length > 0;
+  if (change.puts.size === 0 && !change.group && !hasMeta) return writes;
+  S.tree.adopt(change);
+  S.history = commitToHistory(S.history, change);
+  if (hasMeta) for (const key of ["device", "name", "thisIsMe", "settings", "lastBackup"]) if (change.meta[key] !== undefined) S.meta[key] = change.meta[key];
+  writes = writes.then(async ok => {
+    if (!ok) return false;
+    try {
+      await S.storage.commit(change);
+      return true;
+    } catch (err) {
+      saveFailed(err);
+      return false;
+    }
+  });
+  redraw();
+  return writes;
 }
 
 let persistenceAsked = false;
