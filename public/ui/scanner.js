@@ -47,7 +47,14 @@ export function tuneCamera(track) {
     try { const current = track.getSettings?.().zoom; if (typeof current === "number") value = current; } catch { /* keep the default */ }
     value = Math.min(z.max, Math.max(z.min, value));
   }
+  const modes = Array.isArray(caps.focusMode) ? caps.focusMode : [];
+  // Some phones (a Galaxy S23+) open focused far away and never refocus alone: nudge with a one-shot, then back to continuous.
+  const refocus = () => {
+    if (modes.includes("single-shot")) apply({ focusMode: "single-shot" });
+    if (modes.includes("continuous")) setTimeout(() => apply({ focusMode: "continuous" }), 600);
+  };
   return {
+    refocus,
     zoom: usable ? { min: z.min, max: z.max, step: z.step > 0 ? z.step : (z.max - z.min) / 20, value } : null,
     setZoom: v => apply({ zoom: v }),
   };
@@ -62,7 +69,7 @@ export async function startScanner({ video, onProgress, onDone }) {
   if (!navigator.mediaDevices?.getUserMedia) throw Object.assign(new Error("no camera API"), { code: "nocamera" });
   let media;
   try {
-    media = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment", width: { ideal: 1280 }, height: { ideal: 1280 } }, audio: false });
+    media = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment", advanced: [{ focusMode: "continuous" }], width: { ideal: 1280 }, height: { ideal: 1280 } }, audio: false });
   } catch (err) {
     throw Object.assign(new Error(String(err?.message || err)), { code: cameraFailure(err) });
   }
@@ -71,6 +78,9 @@ export async function startScanner({ video, onProgress, onDone }) {
   video.muted = true;
   video.setAttribute("playsinline", "");
   try { await video.play(); } catch { /* autoplay can refuse; the picture still arrives once it starts */ }
+  tuned.refocus(); // once the picture runs, focus again: a phone that opened out of focus stays that way otherwise
+  const onTap = () => tuned.refocus();
+  video.addEventListener("click", onTap);
 
   const collector = new Collector();
   const grab = document.createElement("canvas");
@@ -90,6 +100,7 @@ export async function startScanner({ video, onProgress, onDone }) {
     if (!running) return;
     running = false;
     for (const p of pool) p.worker.terminate();
+    video.removeEventListener("click", onTap);
     for (const track of media.getTracks()) track.stop();
     video.srcObject = null;
   };

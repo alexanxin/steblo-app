@@ -109,3 +109,5 @@ Use two phones with the same build, each with a tree from `node scripts/make-fix
 - [ ] Phone B's join. *Both phones.* Pass: if A kept a group separate that B doesn't have, B is offered that group after Done, and only groups (never "gained relatives"). Simulated.
 - [ ] GEDCOM import join. *One phone with a tree.* Pass: after **Add to my tree** the join starts for the new groups, with one person answering; on an empty tree nothing is asked. Simulated.
 - [ ] Editing is locked. *Both phones.* Pass: during a sync or join nothing behind the screen can be tapped; after Finish, Cancel or Close it works again. Simulated.
+
+- [ ] Galaxy S23+: scanning a code from about 20 cm works; tapping the picture refocuses (focus fix, untested on the phone).
